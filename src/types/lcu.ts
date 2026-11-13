@@ -7,15 +7,6 @@
 
 // ==================== 召唤师相关 ====================
 
-/** ARAM 重随点数 */
-export interface RerollPoints {
-  currentPoints: number
-  maxRolls: number
-  numberOfRolls: number
-  pointsCostToRoll: number
-  pointsToReroll: number
-}
-
 /** 当前召唤师信息 — GET /lol-summoner/v1/current-summoner */
 export interface SummonerInfo {
   accountId: number
@@ -28,38 +19,11 @@ export interface SummonerInfo {
   privacy: 'PUBLIC' | 'PRIVATE' | (string & {})
   profileIconId: number
   puuid: string
-  rerollPoints: RerollPoints
   summonerId: number
   summonerLevel: number
   unnamed: boolean
   xpSinceLastLevel: number
   xpUntilNextLevel: number
-}
-
-// ==================== 房间/大厅相关 ====================
-
-/** 房间配置（用于 POST /lol-lobby/v2/lobby 创建房间） */
-export interface LobbyConfig {
-  queueId?: number
-  gameConfig?: {
-    gameMode: string
-    mapId: number
-    gameType?: string
-  }
-  customGameLobby?: {
-    configuration: {
-      gameMode: string
-      gameMutator: string
-      gameServerRegion: string
-      mapId: number
-      mutators: { id: number }
-      spectatorPolicy: string
-      teamSize: number
-    }
-    lobbyName: string
-    lobbyPassword: string
-  }
-  isCustom?: boolean
 }
 
 /** 房间游戏配置 — GET /lol-lobby/v2/lobby 中的 gameConfig 字段 */
@@ -149,245 +113,6 @@ export interface LobbyMember {
   summonerLevel: number
   summonerName: string
   teamId: number
-}
-
-// ==================== 好友相关 ====================
-
-export type LolGameMode =
-  | 'CLASSIC'
-  | 'ARAM'
-  | 'CHERRY'
-  | 'STRAWBERRY'
-  | 'TFT'
-  | 'KIWI'
-  | 'URF'
-  | 'ARURF'
-  | (string & {})
-
-export type LolGameStatus =
-  | 'outOfGame'
-  | 'inQueue'
-  | 'championSelect'
-  | 'inGame'
-  | 'spectating'
-  | (string & {})
-
-export type LolIconOverride = '' | 'summonerIcon' | 'companion' | (string & {})
-
-export type LolRankedDivision = 'I' | 'II' | 'III' | 'IV' | 'NA' | (string & {})
-
-export type LolRankedTier =
-  | 'IRON'
-  | 'BRONZE'
-  | 'SILVER'
-  | 'GOLD'
-  | 'PLATINUM'
-  | 'EMERALD'
-  | 'DIAMOND'
-  | 'MASTER'
-  | 'GRANDMASTER'
-  | 'CHALLENGER'
-  | 'NONE'
-  | 'NA'
-  | (string & {})
-
-/**
- * 好友 / ChatMe 共用的 LOL 子状态字段
- *
- * 注意：
- *   1. 字段全部是**字符串**（即使看起来像数字/ID/布尔也是 "123" / "true" 这种字符串形式），
- *      这是 XMPP presence payload 的历史遗产
- *   2. 字段非常**稀疏** —— 玩家当前不在游戏中时大量字段会缺失或空字符串
- *   3. 这份接口覆盖了目前观察到的字段；Riot 随版本会加新字段，未识别字段不应报错
- *      （所以上面的字段都是可选的）
- */
-export interface LolSubStatus {
-  /** 选中的横幅 ID */
-  bannerIdSelected?: string
-  /** 挑战水晶等级：IRON/BRONZE/SILVER/GOLD/PLATINUM/DIAMOND/MASTER/GRANDMASTER/CHALLENGER */
-  challengeCrystalLevel?: string
-  /** 挑战点数（字符串形式） */
-  challengePoints?: string
-  /** 选中展示的 3 个挑战 token（逗号分隔） */
-  challengeTokensSelected?: string
-  /** 当前使用的英雄 ID；TFT 通常为 "" */
-  championId?: string
-  /** 小小英雄 ID；TFT 中代表当前小小英雄，普通 LOL 也可能存在 */
-  companionId?: string
-  /** 击杀特效皮肤 ID；TFT 中通常对应棋盘/特效装饰 */
-  damageSkinId?: string
-  /** 当前对局 ID（"" 或 undefined 表示不在对局） */
-  gameId?: string
-  /** 游戏模式：CLASSIC/ARAM/CHERRY/TFT/KIWI/URF/ARURF 等 */
-  gameMode?: LolGameMode
-  /** 队列类型（如 CHERRY/RANKED_TFT/RANKED_SOLO_5x5，和 queueId 二选一存在） */
-  gameQueueType?: string
-  /** 游戏状态：outOfGame / inQueue / championSelect / inGame / spectating 等 */
-  gameStatus?: LolGameStatus
-  /** 头像覆盖：普通 LOL 多为 "summonerIcon"，TFT 多为 "companion"，未覆盖为 "" */
-  iconOverride?: LolIconOverride
-  /** 是否可被观战：ALL / FRIENDS / NONE */
-  isObservable?: string
-  /** 传说精通分数 */
-  legendaryMasteryScore?: string
-  /** 召唤师等级 */
-  level?: string
-  /** 地图 ID（"11" 召唤师峡谷 / "12" 嚎哭深渊 等） */
-  mapId?: string
-  /** 地图皮肤 ID */
-  mapSkinId?: string
-  /** 选中的玩家称号 UUID */
-  playerTitleSelected?: string
-  /** 头像图标 ID（字符串） */
-  profileIcon?: string
-  /** 组队信息（通常为 ""） */
-  pty?: string
-  /** 组队开放状态：open / closed */
-  ptyType?: string
-  /** 玩家 PUUID */
-  puuid?: string
-  /** 队列 ID（数字的字符串形式，如 "2400" 代表大乱斗） */
-  queueId?: string
-  /** 当前赛季排位子段位：I/II/III/IV；大师及以上或 TFT 场景常见 NA */
-  rankedLeagueDivision?: LolRankedDivision
-  /** 当前赛季排位队列：RANKED_SOLO_5x5 / RANKED_FLEX_SR / RANKED_TFT / RANKED_TFT_TURBO 等 */
-  rankedLeagueQueue?: string
-  /** 当前赛季排位段位 */
-  rankedLeagueTier?: LolRankedTier
-  /** 当前赛季连败局数（字符串） */
-  rankedLosses?: string
-  /** 上赛季子段位；大师及以上或 TFT 场景常见 NA */
-  rankedPrevSeasonDivision?: LolRankedDivision
-  /** 上赛季段位 */
-  rankedPrevSeasonTier?: LolRankedTier
-  /** 分赛段奖励等级 */
-  rankedSplitRewardLevel?: string
-  /** 当前赛季连胜局数（字符串） */
-  rankedWins?: string
-  /** 纹章 JSON 字符串 */
-  regalia?: string
-  /** 皮肤变体 ID；TFT 通常为 "" */
-  skinVariant?: string
-  /** 皮肤名（英文短名）；TFT 通常为 "" */
-  skinname?: string
-  /** 观战 key（base64，进入观战用） */
-  spectatorKey?: string
-  /** 进入当前对局的时间戳（毫秒，字符串） */
-  timeStamp?: string
-}
-
-/** /lol-chat/v1/friends 返回的好友对象 */
-export interface ChatFriend {
-  /** 好友 ID（聊天系统内部标识，格式 `{puuid}@pvp.net`） */
-  id: string
-  /** 召唤师 ID */
-  summonerId: number
-  /** 玩家通用唯一标识 */
-  puuid: string
-  /** Riot ID 名称 */
-  gameName: string
-  /** Riot ID Tag */
-  gameTag: string
-  /** 旧版召唤师名（现在基本为 ""） */
-  name: string
-  /** 头像 ID */
-  icon: number
-  /** 在线状态 */
-  availability: Availability
-  /** 当前所在产品: 'league_of_legends' / 'valorant' 等 */
-  product: string
-  /** 产品显示名（通常为 ""） */
-  productName: string
-  /** 客户端分线（通常为 ""） */
-  patchline: string
-  /** 进程/会话 ID（XMPP 内部用） */
-  pid: string
-  /** 平台 ID：HN1 (国服) / EUW1 / NA1 等 */
-  platformId: string
-  /** 显示分组 ID */
-  displayGroupId: number
-  /** 显示分组名（默认分组是 "**Default"） */
-  displayGroupName: string
-  /** 真实分组 ID */
-  groupId: number
-  /** 真实分组名 */
-  groupName: string
-  /** 备注 */
-  note: string
-  /** 个性签名 */
-  statusMessage: string
-  /** 简介（通常为 ""） */
-  summary: string
-  /** 上次在线时间（未知时为 null；在线时为 0 或毫秒时间戳） */
-  lastSeenOnlineTimestamp: string | number | null
-  /** XMPP 时间戳（毫秒） */
-  time: number
-  /** 是否屏蔽该好友的 P2P 语音 */
-  isP2PConversationMuted: boolean
-  /** 与此玩家在 Riot 层的关系（friend / pending / blocked 等） */
-  relationshipOnRiot: string
-  /** Discord 账户 ID（未绑定为 null） */
-  discordId: string | null
-  /** Discord 账户详情（未绑定为 null） */
-  discordInfo: unknown | null
-  /** Discord 在线状态（未绑定为 null） */
-  discordOnlineStatus: string | null
-  /** LOL 子状态（稀疏，字段全为字符串） */
-  lol: LolSubStatus
-}
-
-/** POST /lol-spectator/v1/spectate/launch 的请求体 */
-export interface SpectatorLaunchPayload {
-  allowObserveMode: 'ALL' | 'FRIENDS' | 'NONE' | (string & {})
-  dropInSpectateGameId: string
-  gameQueueType: string
-  puuid: string
-  spectatorKey?: string
-}
-
-// ==================== 匹配相关 ====================
-
-
-/** 匹配搜索状态 */
-export type MatchSearchState = 'Invalid' | 'AbandonedLowPriorityQueue' | 'Canceled' | 'Searching' | 'Found' | 'Error'
-
-/** Dodge（逃跑）数据 */
-export interface DodgeData {
-  dodgerId: number
-  state: string
-}
-
-/** 低优先权惩罚数据 */
-export interface LowPriorityData {
-  bustedLeaverAccessToken: string
-  penalizedSummonerIds: number[]
-  penaltyTime: number
-  penaltyTimeRemaining: number
-  reason: string
-}
-
-/** 匹配搜索状态详情 — GET /lol-matchmaking/v1/search */
-export interface MatchSearchResult {
-  dodgeData: DodgeData
-  errors: unknown[]
-  estimatedQueueTime: number
-  isCurrentlyInQueue: boolean
-  lobbyId: string
-  lowPriorityData: LowPriorityData
-  queueId: number
-  readyCheck: ReadyCheck
-  searchState: MatchSearchState
-  timeInQueue: number
-}
-
-/** Ready Check（匹配准备确认）状态 — GET /lol-matchmaking/v1/ready-check */
-export interface ReadyCheck {
-  declinerIds: number[]
-  dodgeWarning: string
-  playerResponse: 'None' | 'Accepted' | 'Declined'
-  state: 'Invalid' | 'InProgress' | 'EveryoneReady' | 'StrangerNotReady' | 'PartyNotReady'
-  suppressUx: boolean
-  timer: number
 }
 
 // ==================== 游戏流程相关 ====================
@@ -502,11 +227,8 @@ export interface ChampSelectSession {
   allowDuplicatePicks: boolean
   allowLockedEvents: boolean
   allowPlayerPickSameChampion: boolean
-  allowRerolling: boolean
   allowSkinSelection: boolean
   allowSubsetChampionPicks: boolean
-  benchChampions: BenchChampion[] // ARAM 模式，共享池中的英雄
-  benchEnabled: boolean
   boostableSkinCount: number
   chatDetails: {
     mucJwtDto: {
@@ -533,7 +255,6 @@ export interface ChampSelectSession {
   pickOrderSwaps: unknown[]
   positionSwaps: unknown[]
   queueId: number
-  rerollsRemaining: number
   showQuitButton: boolean
   skipChampionSelect: boolean
   theirTeam: ChampSelectPlayer[]
@@ -550,12 +271,6 @@ export interface ChampSelectSession {
     theirTeamBans: number[]
     numBans: number
   }
-}
-
-/** 替补席英雄（ARAM 模式） */
-export interface BenchChampion {
-  championId: number
-  isPriority: boolean
 }
 
 /** 英雄交易状态 */
@@ -706,14 +421,6 @@ export interface ChampSelectPlayerDetail {
 
 /** 常用队列ID */
 export enum QueueId {
-  /** 云顶之弈 (普通) */
-  TFT_NORMAL = 1090,
-  /** 云顶之弈 (排位) */
-  TFT_RANKED = 1100,
-  /** 云顶之弈 (超级激斗) */
-  TFT_HYPER_ROLL = 1130,
-  /** 云顶之弈 (双人作战) */
-  TFT_DOUBLE_UP = 1160,
   /** 单/双排位 */
   RANKED_SOLO = 420,
   /** 灵活排位 */
@@ -722,8 +429,6 @@ export enum QueueId {
   NORMAL_BLIND = 430,
   /** 征召模式 */
   NORMAL_DRAFT = 400,
-  /** 极地大乱斗 */
-  ARAM = 450,
 }
 
 // ==================== 战绩相关 ====================
@@ -750,7 +455,6 @@ export interface MatchGame {
   gameDuration: number
   gameId: number
   gameMode: string
-  gameModeMutators: string[]
   gameType: string
   gameVersion: string
   mapId: number
@@ -903,12 +607,6 @@ export interface ParticipantStats {
   physicalDamageDealt: number
   physicalDamageDealtToChampions: number
   physicalDamageTaken: number
-  playerAugment1: number
-  playerAugment2: number
-  playerAugment3: number
-  playerAugment4: number
-  playerAugment5: number
-  playerAugment6: number
   playerScore0: number
   playerScore1: number
   playerScore2: number
@@ -919,11 +617,9 @@ export interface ParticipantStats {
   playerScore7: number
   playerScore8: number
   playerScore9: number
-  playerSubteamId: number
   quadraKills: number
   roleBoundItem: number
   sightWardsBoughtInGame: number
-  subteamPlacement: number
   teamEarlySurrendered: boolean
   timeCCingOthers: number
   totalDamageDealt: number
@@ -972,7 +668,6 @@ export interface GameTypeConfig {
   onboardCoopBeginner: boolean
   pickMode: string
   postPickTimerDuration: number
-  reroll: boolean
   teamChampionPool: boolean
 }
 
@@ -1069,172 +764,12 @@ export interface LCUEventMessage {
 
 /** 常用 LCU 事件 URI */
 export enum LcuEventUri {
-  /** 匹配准备就绪（接受/拒绝） */
-  READY_CHECK = '/lol-matchmaking/v1/ready-check',
   /** 游戏流程阶段 */
   GAMEFLOW_PHASE = '/lol-gameflow/v1/session',
   /** 英雄选择阶段 */
   CHAMP_SELECT = '/lol-champ-select/v1/session',
-  /** TFT 战斗通行证更新（可用于检测对局结束） */
-  TFT_BATTLE_PASS = '/lol-tft-pass/v1/battle-pass',
   /** 游戏流程阶段变化（仅 phase 字符串） */
   GAMEFLOW_PHASE_CHANGE = '/lol-gameflow/v1/gameflow-phase',
   /** 大厅/房间状态 */
   LOBBY = '/lol-lobby/v2/lobby',
-  /** 当前玩家的聊天状态（availability / statusMessage 等） */
-  CHAT_ME = '/lol-chat/v1/me',
-}
-
-// ==================== 聊天相关 ====================
-
-/** 聊天对话 — GET /lol-chat/v1/conversations */
-export interface ChatConversation {
-  gameName: string
-  gameTag: string
-  id: string
-  inviterId: string
-  isMuted: boolean
-  lastMessage: unknown
-  multiUserChatJWT: string
-  name: string
-  password: string
-  pid: string
-  targetRegion: string
-  type: 'chat' | 'customGame' | 'championSelect' | 'postGame' | (string & {})
-  unreadMessageCount: number
-}
-
-/** 聊天消息 — GET/POST /lol-chat/v1/conversations/{id}/messages */
-export interface ChatMessage {
-  body: string
-  fromId: string
-  fromObfuscatedSummonerId: number
-  fromPid: string
-  fromSummonerId: number
-  id: string
-  isHistorical: boolean
-  timestamp: string
-  type: 'chat' | 'celebration' | 'system' | (string & {})
-}
-
-/** 发送聊天消息的请求体 */
-export interface SendChatMessageBody {
-  body: string
-  type?: 'chat' | 'celebration' | (string & {})
-}
-
-/** 玩家在线状态 */
-export type Availability = 'chat' | 'away' | 'dnd' | 'offline' | 'mobile' | (string & {})
-
-/** 当前用户聊天状态 — GET /lol-chat/v1/me */
-export interface ChatMe {
-  /** 在线状态：chat / away / dnd / offline / mobile */
-  availability: Availability
-  /** Riot ID 名称 */
-  gameName: string
-  /** Riot ID Tag（如 "77772"） */
-  gameTag: string
-  /** 头像 ID */
-  icon: number
-  /** 聊天系统内部标识，格式 `{puuid}@pvp.net` */
-  id: string
-  /** LOL 子状态（稀疏，字段全是字符串） */
-  lol: LolSubStatus
-  /** 旧版召唤师名（现在通常为 ""） */
-  name: string
-  /** 混淆后的召唤师 ID（0 表示未提供） */
-  obfuscatedSummonerId: number
-  /** 客户端分线（通常为 ""） */
-  patchline: string
-  /** 进程/会话 ID（格式同 id） */
-  pid: string
-  /** 平台 ID：HN1 (国服) / EUW1 / NA1 等 */
-  platformId: string
-  /** 产品：league_of_legends / valorant 等 */
-  product: string
-  /** 产品显示名（通常为 ""） */
-  productName: string
-  /** 玩家 PUUID */
-  puuid: string
-  /** 个性签名。**注意可能为 null**（从未设置过签名 / XMPP 未就绪等） */
-  statusMessage: string | null
-  /** 简介（通常为 ""） */
-  summary: string
-  /** 召唤师 ID */
-  summonerId: number
-  /** XMPP 时间戳（毫秒；0 表示未提供） */
-  time: number
-  /** 上次在线时间（通常为 null） */
-  lastSeenOnlineTimestamp?: string | number | null
-}
-
-// ==================== 奖励领取（通行证 / Grants） ====================
-
-/** 奖励组内的单个奖励 — rewardGroup.rewards[] */
-export interface RewardItem {
-  /** 奖励 id，select 时提交的就是它 */
-  id: string
-  /** 物品 id（如皮肤/英雄/货币的 itemId） */
-  itemId: string
-  /** 物品类型，如 CHAMPION_SKIN / CURRENCY / EMOTE 等 */
-  itemType: string
-  /** 数量 */
-  quantity: number
-  /** 履约来源 */
-  fulfillmentSource?: string
-  media?: {
-    iconUrl?: string
-    splashImage?: string
-  }
-  localizations?: {
-    title?: string
-    details?: string
-  }
-}
-
-/** 选择策略：几选几 */
-export interface RewardSelectionStrategyConfig {
-  /** 最多可选数量 */
-  maxSelectionsAllowed: number
-  /** 最少需选数量 */
-  minSelectionsAllowed: number
-}
-
-/** 奖励组 — rewardGroup */
-export interface RewardGroup {
-  id: string
-  active: boolean
-  productId: string
-  rewardStrategy: string
-  celebrationType: string
-  childRewardGroupIds: string[]
-  rewards: RewardItem[]
-  /** 为 null 表示直接发放（无需选择）；非 null 表示多选一/几选几 */
-  selectionStrategyConfig: RewardSelectionStrategyConfig | null
-  localizations?: {
-    title?: string
-    description?: string
-  }
-  media?: Record<string, unknown>
-  types: string[]
-}
-
-/** 授予信息 — grant.info */
-export interface RewardGrantInfo {
-  /** grant id，即领取/选择所需的 grantId */
-  id: string
-  granteeId: string
-  rewardGroupId: string
-  /** 状态，如 PENDING_SELECTION（待选择）、SELECTED、GRANTED 等 */
-  status: string
-  viewed: boolean
-  dateCreated: string
-  selectedIds: string[]
-  grantElements: unknown[]
-}
-
-/** 一条奖励授予 — GET /lol-rewards/v1/grants */
-export interface RewardsGrant {
-  info: RewardGrantInfo
-  rewardGroup: RewardGroup
 }

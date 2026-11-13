@@ -11,6 +11,7 @@ import {
   shouldSkipSonaStrengthGame,
 } from '@/lib/player-strength-score'
 import { store } from '@/lib/store'
+import { isSummonersRift } from '@/lib/game-mode'
 
 const SONA_LOBBY_HISTORY_ATTR = 'data-sona-lobby-history'
 const SONA_LOBBY_STATS_ATTR = 'data-sona-lobby-stats'
@@ -55,6 +56,9 @@ let lobbyMemberHistoryMap = new Map<string, LobbyMemberInfo>()
 let lobbyMemberHistoryQueueId = 0
 let lobbyMemberStatsMap = new Map<string, LobbyMemberStats>()
 let lobbyMemberStatsInFlight: Promise<void> | null = null
+let lobbyVersion = 0
+let lobbyRefreshToken = 0
+let statsInFlightVersion = 0
 let lobbyMemberNameMap = new Map<string, string>()
 let boundIdentities: BoundIdentity[] = []
 let matchModalRoot: Root | null = null
@@ -107,8 +111,17 @@ async function getDisplayNameByPuuid(puuid: string, fallback: string): Promise<s
 }
 
 function indexLobby(lobby: Lobby | null) {
+  lobbyVersion += 1
+  cleanupBoundIdentities()
+  lobbyMemberStatsMap.clear()
   const nextMap = new Map<string, LobbyMemberInfo>()
-  lobbyMemberHistoryQueueId = lobby?.gameConfig?.queueId ?? 0
+  const supported = lobby && isSummonersRift(lobby.gameConfig)
+  lobbyMemberHistoryQueueId = supported ? lobby.gameConfig.queueId : 0
+  if (!supported) {
+    lobbyMemberHistoryMap = nextMap
+    cleanupMatchHistoryModal()
+    return
+  }
 
   for (const member of lobby?.members ?? []) {
     const info: LobbyMemberInfo = {
@@ -125,23 +138,27 @@ function indexLobby(lobby: Lobby | null) {
 }
 
 async function refreshLobbyMemberStats() {
-  if (lobbyMemberStatsInFlight) return lobbyMemberStatsInFlight
+  if (lobbyMemberHistoryMap.size === 0) return
+  if (lobbyMemberStatsInFlight && statsInFlightVersion === lobbyVersion) return lobbyMemberStatsInFlight
 
-  lobbyMemberStatsInFlight = doRefreshLobbyMemberStats()
+  statsInFlightVersion = lobbyVersion
+  const request = doRefreshLobbyMemberStats()
     .finally(() => {
-      lobbyMemberStatsInFlight = null
+      if (lobbyMemberStatsInFlight === request) lobbyMemberStatsInFlight = null
     })
-
-  return lobbyMemberStatsInFlight
+  lobbyMemberStatsInFlight = request
+  return request
 }
 
 async function doRefreshLobbyMemberStats() {
+  const version = lobbyVersion
+  const queueId = lobbyMemberHistoryQueueId
   const members = [...new Map(
     [...lobbyMemberHistoryMap.values()]
       .filter((member) => member.puuid)
       .map((member) => [member.puuid, member] as const),
   ).values()]
-  const tag = queueIdToTag(lobbyMemberHistoryQueueId)
+  const tag = queueIdToTag(queueId)
   const nextStats = new Map<string, LobbyMemberStats>()
 
   await Promise.all(members.map(async (member) => {
@@ -152,7 +169,7 @@ async function doRefreshLobbyMemberStats() {
         tag: tag || undefined,
       })
       const receivedGames = resp.games ?? []
-      const games = filterSonaStrengthGamesByQueue(receivedGames, lobbyMemberHistoryQueueId)
+      const games = filterSonaStrengthGamesByQueue(receivedGames, queueId)
       let total = 0
       let wins = 0
       let kills = 0
@@ -184,28 +201,30 @@ async function doRefreshLobbyMemberStats() {
         member.name,
         total,
         receivedGames.length,
-        lobbyMemberHistoryQueueId,
+        queueId,
       )
     } catch (err) {
       logger.debug('[LobbyHistory] 拉取成员战绩失败: %s', member.name, err)
     }
   }))
 
-  if (!lobbyMemberHistoryRegistered) return
+  if (!lobbyMemberHistoryRegistered || version !== lobbyVersion) return
 
   lobbyMemberStatsMap = nextStats
   tryInjectLobbyMemberHistory()
 }
 
 async function refreshLobbyMemberHistoryMap() {
+  const token = ++lobbyRefreshToken
   try {
     const lobby = await lcu.getLobby()
-    if (!lobbyMemberHistoryRegistered) return
+    if (!lobbyMemberHistoryRegistered || token !== lobbyRefreshToken) return
 
     indexLobby(lobby)
     tryInjectLobbyMemberHistory()
     void refreshLobbyMemberStats()
   } catch {
+    if (!lobbyMemberHistoryRegistered || token !== lobbyRefreshToken) return
     indexLobby(null)
     lobbyMemberStatsMap.clear()
   }
@@ -282,7 +301,7 @@ function renderStatsOverlay(identity: HTMLElement, stats: LobbyMemberStats | und
   const nextText = stats
     ? [
         `胜率 ${Math.round(stats.winRate * 100)}%`,
-        `KDA ${stats.kda >= 99 ? 'Perfect' : stats.kda.toFixed(2)}`,
+        `KDA ${stats.kda >= 99 ? '完美' : stats.kda.toFixed(2)}`,
         `评分 ${stats.score != null ? stats.score.toFixed(1) : '--'}`,
       ].join('|')
     : '战绩加载中...'
@@ -300,13 +319,14 @@ function renderStatsOverlay(identity: HTMLElement, stats: LobbyMemberStats | und
   overlay.innerHTML = [
     `<span style="color:${getRateColor(stats.winRate)}">胜率 ${Math.round(stats.winRate * 100)}%</span>`,
     `<span style="color:#5c5b57">|</span>`,
-    `<span style="color:${getKdaColor(stats.kda)}">KDA ${stats.kda >= 99 ? 'Perfect' : stats.kda.toFixed(2)}</span>`,
+    `<span style="color:${getKdaColor(stats.kda)}">KDA ${stats.kda >= 99 ? '完美' : stats.kda.toFixed(2)}</span>`,
     `<span style="color:#5c5b57">|</span>`,
     `<span style="color:${stats.score != null ? getScoreColor(stats.score) : '#a09b8c'}">评分 ${stats.score != null ? stats.score.toFixed(1) : '--'}</span>`,
   ].join('')
 }
 
 function bindIdentityClick(identity: HTMLElement, info: LobbyMemberInfo) {
+  const version = lobbyVersion
   if (identity.hasAttribute(SONA_LOBBY_HISTORY_ATTR)) {
     renderStatsOverlay(identity, lobbyMemberStatsMap.get(info.puuid))
     return
@@ -327,6 +347,7 @@ function bindIdentityClick(identity: HTMLElement, info: LobbyMemberInfo) {
     event.preventDefault()
     event.stopPropagation()
     void getDisplayNameByPuuid(info.puuid, info.name).then((displayName) => {
+      if (version !== lobbyVersion) return
       showMatchHistoryModal(info.puuid, displayName, lobbyMemberHistoryQueueId || undefined)
     })
   }
@@ -387,6 +408,7 @@ export function updateLobbyMemberMatchHistory(enabled: boolean) {
 
     lobbyMemberHistoryUnsub = lcu.observe(LcuEventUri.LOBBY, (event: LCUEventMessage) => {
       if (event.eventType === 'Delete') {
+        lobbyRefreshToken += 1
         indexLobby(null)
         lobbyMemberStatsMap.clear()
         cleanupBoundIdentities()
@@ -402,6 +424,7 @@ export function updateLobbyMemberMatchHistory(enabled: boolean) {
       }
     })
   } else if (!enabled && lobbyMemberHistoryRegistered) {
+    lobbyRefreshToken += 1
     if (lobbyMemberHistoryInjected) {
       injector.unregister(tryInjectLobbyMemberHistory)
       lobbyMemberHistoryInjected = false

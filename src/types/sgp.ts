@@ -37,8 +37,6 @@ export interface SgpGameSummaryJsonLol {
   gameEndTimestamp: number
   gameId: number
   gameMode: string
-  /** 模式变体，如 ARAM 的 "mapskin_ha_bilgewater" */
-  gameModeMutators: string[]
   gameName: string
   gameStartTimestamp: number
   gameType: string
@@ -176,14 +174,6 @@ export interface SgpParticipantLol {
   physicalDamageDealt: number
   physicalDamageDealtToChampions: number
   physicalDamageTaken: number
-  placement: number
-  playerAugment1: number
-  playerAugment2: number
-  playerAugment3: number
-  playerAugment4: number
-  playerAugment5: number
-  playerAugment6: number
-  playerSubteamId: number
   profileIcon: number
   pushPings: number
   puuid: string
@@ -200,7 +190,6 @@ export interface SgpParticipantLol {
   spell2Id: number
   spell3Casts: number
   spell4Casts: number
-  subteamPlacement: number
   summoner1Casts: number
   summoner2Casts: number
   summonerId: number
@@ -342,30 +331,6 @@ export const SGP_SERVERS: Record<string, { matchHistory: string | null; common: 
   TENCENT_PBE:   { matchHistory: 'https://pbe-sgp.lol.qq.com:21019',       common: 'https://pbe-sgp.lol.qq.com:21019' },
   TENCENT_PREPBE:{ matchHistory: 'https://prepbe-sgp.lol.qq.com:21019',    common: 'https://prepbe-sgp.lol.qq.com:21019' },
 
-  // ===== 外服 =====
-  TW2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net',  common: 'https://tw2-red.lol.sgp.pvp.net' },
-  SG2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net',  common: 'https://sg2-red.lol.sgp.pvp.net' },
-  PH2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net',  common: 'https://ph2-red.lol.sgp.pvp.net' },
-  VN2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net',  common: 'https://vn2-red.lol.sgp.pvp.net' },
-  TH2:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net',  common: 'https://th2-red.lol.sgp.pvp.net' },
-  JP1:  { matchHistory: 'https://apne1-red.pp.sgp.pvp.net',  common: 'https://jp-red.lol.sgp.pvp.net' },
-  KR:   { matchHistory: 'https://apne1-red.pp.sgp.pvp.net',  common: 'https://kr-red.lol.sgp.pvp.net' },
-  NA1:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net',   common: 'https://na-red.lol.sgp.pvp.net' },
-  BR1:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net',   common: 'https://br-red.lol.sgp.pvp.net' },
-  LA1:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net',   common: 'https://lan-red.lol.sgp.pvp.net' },
-  LA2:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net',   common: 'https://las-red.lol.sgp.pvp.net' },
-  OC1:  { matchHistory: 'https://apse1-red.pp.sgp.pvp.net',  common: 'https://oce-red.lol.sgp.pvp.net' },
-  EUW:  { matchHistory: 'https://euc1-red.pp.sgp.pvp.net',   common: 'https://euw-red.lol.sgp.pvp.net' },
-  EUN1: { matchHistory: 'https://euc1-red.pp.sgp.pvp.net',   common: 'https://eun1-red.lol.sgp.pvp.net' },
-  TR1:  { matchHistory: 'https://euc1-red.pp.sgp.pvp.net',   common: 'https://tr-red.lol.sgp.pvp.net' },
-  RU:   { matchHistory: 'https://euc1-red.pp.sgp.pvp.net',   common: 'https://ru-red.lol.sgp.pvp.net' },
-  PBE:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net',   common: 'https://pbe-red.lol.sgp.pvp.net' },
-
-  // issuer fallback 有时只能解析到 regional PP 集群，保留 match-history 能力即可。
-  EUC1:  { matchHistory: 'https://euc1-red.pp.sgp.pvp.net',   common: null },
-  USW2:  { matchHistory: 'https://usw2-red.pp.sgp.pvp.net',   common: null },
-  APSE1: { matchHistory: 'https://apse1-red.pp.sgp.pvp.net',  common: null },
-  APNE1: { matchHistory: 'https://apne1-red.pp.sgp.pvp.net',  common: null },
 }
 
 /** 国服大区互通列表 —— 同一个 JWT Token 可查询以下所有大区的战绩 */

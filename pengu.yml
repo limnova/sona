@@ -1,15 +1,15 @@
 id: sona
 name: Sona
-description: Client enhancement suite — champion select tools, OP.GG builds, match history and beautification.
+description: 国服排位分析：队友评级、战绩查询及符文装备推荐，界面固定中文。
 version: $package.version
 
-repo: https://github.com/WJZ-P/sona
+repo: https://github.com/limnova/sona
 
 author:
   name: WJZ-P
   github: WJZ-P
 
-tags: [utility, ui, champ-select]
+tags: [match-history, builds, champ-select]
 
 install:
   release: "sona-*.zip"

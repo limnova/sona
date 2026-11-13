@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { useI18n } from '@/i18n'
 import '@/styles/SonaSelect.css'
 
 export interface SonaSelectOption {
@@ -18,10 +17,8 @@ export interface SonaSelectProps {
 export function SonaSelect({ options, value, onChange, placeholder = '请选择...' }: SonaSelectProps) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const { t } = useI18n()
 
   const selectedOption = options.find((opt) => opt.value === value)
-  const displayPlaceholder = placeholder === '请选择...' ? t('select.placeholder') : placeholder
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -42,7 +39,7 @@ export function SonaSelect({ options, value, onChange, placeholder = '请选择.
       >
         <span className="sona-select-value">
           {selectedOption?.icon && <img className="sona-select-icon" src={selectedOption.icon} alt="" />}
-          {selectedOption ? selectedOption.label : displayPlaceholder}
+          {selectedOption ? selectedOption.label : placeholder}
         </span>
         <svg className={`sona-select-arrow${isOpen ? ' sona-select-arrow--open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />

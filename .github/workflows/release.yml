@@ -24,16 +24,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test
+        run: npm test
+
       - name: Build plugin
-        run: |
-          # CI 环境：将 loaderPath 指向当前目录，让构建产物输出到项目内
-          node -e "
-            const pkg = JSON.parse(require('fs').readFileSync('package.json','utf8'));
-            pkg.config.loaderPath = './';
-            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-          "
-          npx tsc
-          npx vite build
+        run: npm run build
 
       - name: Prepare release package
         run: |

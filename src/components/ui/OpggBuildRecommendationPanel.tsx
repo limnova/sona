@@ -7,7 +7,6 @@ import tier3Icon from '@/../assets/tier/t3.svg'
 import tier4Icon from '@/../assets/tier/t4.svg'
 import tier5Icon from '@/../assets/tier/t5.svg'
 import {
-  getAugmentInfo,
   getChampionById,
   getItemInfo,
   getPerkIcon,
@@ -21,8 +20,8 @@ import {
   getSpellName,
 } from '@/lib/assets'
 import { lcu } from '@/lib/lcu'
-import { type OpggItemBuild, type OpggMode, type OpggPosition, type OpggRuneBuild, type OpggTier } from '@/lib/opgg-api'
-import { translate, useI18n } from '@/i18n'
+import { type OpggItemBuild, type OpggPosition, type OpggRuneBuild, type OpggTier } from '@/lib/opgg-api'
+import type { BuildRecommendation, RecommendationContext, RecommendationMeta } from '@/types/build-recommendation'
 import '@/styles/OpggBuildRecommendationPanel.css'
 
 const MAX_RECOMMENDATION_ROWS = 5
@@ -54,52 +53,6 @@ const OPGG_POSITION_VALUES: OpggPosition[] = ['top', 'jungle', 'mid', 'adc', 'su
 function getOpggTierIcon(tier: OpggTier): string {
   if (tier === 'all' || tier === 'ibsg') return ''
   return `${RANKED_MINI_CREST_BASE}/${tier.replace('_plus', '')}.svg`
-}
-
-export interface RecommendationContext {
-  championId: number
-  queueId: number
-  gameVersion: string
-  gameMode: string
-  position: OpggPosition
-}
-
-export interface BuildRecommendation {
-  mode: OpggMode
-  modeLabel: string
-  version: string
-  position: OpggPosition
-  summary: string[]
-  summonerSpells: OpggItemBuild[]
-  starterItems: OpggItemBuild[]
-  boots: OpggItemBuild[]
-  coreItems: OpggItemBuild[]
-  prismItems: OpggItemBuild[]
-  lastItems: OpggItemBuild[]
-  runePages: OpggRuneBuild[]
-  matchups: Array<{
-    championId: number
-    play: number
-    win: number
-    winRate: number
-  }>
-  augments: Array<{
-    rarity: number
-    label?: string
-    items: Array<{ id: number; pickRate: number; averagePlace?: number; firstPlace?: number; winRate?: number }>
-  }>
-  meta?: RecommendationMeta
-  warning?: string
-}
-
-export interface RecommendationMeta {
-  rank: number | null
-  previousRank: number | null
-  rankDelta: number | null
-  totalRank: number | null
-  matchCount: number | null
-  version: string
-  updatedAt: string
 }
 
 export interface OpggBuildRecommendationPanelProps {
@@ -159,14 +112,11 @@ export function OpggBuildRecommendationPanel({
   onPositionChange,
   onClose,
 }: OpggBuildRecommendationPanelProps) {
-  const { t } = useI18n()
   const champion = getChampionById(context.championId)
-  const championName = champion ? `${champion.title} ${champion.name}` : t('opgg.unrecognizedChampion')
-  const queueText = recommendation?.modeLabel || (context.queueId > 0 ? getQueueName(context.queueId) : t('opgg.unknownQueue'))
+  const championName = champion ? `${champion.title} ${champion.name}` : '未识别英雄'
+  const queueText = getQueueName(context.queueId)
   const positionText = recommendation?.position ?? context.position
   const modeTags = [queueText, formatPositionText(positionText)].filter(Boolean).join(' · ')
-  const showAugments = isKiwiMode(context) || recommendation?.mode === 'arena'
-  const showPositionFilter = supportsPositionFilter(context, recommendation)
   const titleTextRef = useRef<HTMLDivElement>(null)
   const titleNameRef = useRef<HTMLSpanElement>(null)
   useFitTitleFontSize(titleTextRef, titleNameRef, championName)
@@ -189,48 +139,43 @@ export function OpggBuildRecommendationPanel({
           </div>
         </div>
         <div className="sobp-title-actions">
-          {showPositionFilter && (
-            <PositionFilterSelect value={context.position} onChange={onPositionChange} />
-          )}
+          <PositionFilterSelect value={context.position} onChange={onPositionChange} />
           <TierFilterSelect value={selectedTier} onChange={onTierChange} />
           <TrendMeta meta={recommendation?.meta} />
           <SummaryCards values={recommendation?.summary ?? []} />
         </div>
-        <button type="button" className="sobp-close" onClick={onClose} aria-label={t('opgg.close')}>
+        <button type="button" className="sobp-close" onClick={onClose} aria-label={'关闭配装推荐'}>
           ×
         </button>
       </header>
 
       <main className="sobp-body">
         <div className="sobp-grid">
-          <ItemSection title={t('opgg.section.core')} builds={recommendation?.coreItems} itemLimit={3} />
-          <RuneSection title={t('opgg.section.runes')} runes={recommendation?.runePages} championName={championName} modeLabel={recommendation?.modeLabel || queueText} />
-          <SpellSection title={t('opgg.section.spells')} builds={recommendation?.summonerSpells} limit={MAX_RECOMMENDATION_ROWS} />
+          <ItemSection title={'核心装备'} builds={recommendation?.coreItems} itemLimit={3} />
+          <RuneSection title={'符文搭配'} runes={recommendation?.runePages} championName={championName} queueName={queueText} />
+          <SpellSection title={'召唤师技能'} builds={recommendation?.summonerSpells} limit={MAX_RECOMMENDATION_ROWS} />
         </div>
 
         <div className="sobp-trend-wrap">
-          <LastItemTrendSection title={t('opgg.section.trends')} builds={recommendation?.lastItems} />
+          <LastItemTrendSection title={'出装趋势'} builds={recommendation?.lastItems} />
         </div>
 
-        <MatchupSection title={t('opgg.section.matchups')} matchups={recommendation?.matchups} />
+        <MatchupSection title={'优势 / 劣势对局'} matchups={recommendation?.matchups} />
 
-        {showAugments && <AugmentSection title={t('opgg.section.augments')} groups={recommendation?.augments} winRateFirst={isKiwiMode(context)} />}
-
-        {isLoading && <PanelMessage>{t('opgg.loading')}</PanelMessage>}
-        {loadError && <PanelMessage warning>{t('opgg.loadFailed', { error: loadError })}</PanelMessage>}
+        {isLoading && <PanelMessage>{'正在后台加载 OP.GG 推荐数据，完成后会自动刷新。'}</PanelMessage>}
+        {loadError && <PanelMessage warning>{`OP.GG 请求失败：${loadError}`}</PanelMessage>}
         {recommendation?.warning && <PanelMessage warning>{recommendation.warning}</PanelMessage>}
-        {!isLoading && !loadError && !recommendation && <PanelMessage>{t('opgg.noData')}</PanelMessage>}
+        {!isLoading && !loadError && !recommendation && <PanelMessage>{'暂无可用 OP.GG 推荐数据。'}</PanelMessage>}
       </main>
     </div>
   )
 }
 
 function PositionFilterSelect({ value, onChange }: { value: OpggPosition; onChange: (position: OpggPosition) => void }) {
-  const { t } = useI18n()
   const normalizedValue = OPGG_POSITION_VALUES.includes(value) ? value : 'mid'
 
   return (
-    <div className="sobp-position-filter" title={t('opgg.position.select')}>
+    <div className="sobp-position-filter" title={'选择推荐分路'}>
       <SonaSelect
         value={normalizedValue}
         onChange={(nextValue) => onChange(nextValue as OpggPosition)}
@@ -255,29 +200,18 @@ function TierFilterSelect({ value, onChange }: { value: OpggTier; onChange: (tie
   )
 }
 
-function isKiwiMode(context: RecommendationContext): boolean {
-  return context.gameMode.toLowerCase() === 'kiwi'
-}
-
-function supportsPositionFilter(context: RecommendationContext, recommendation: BuildRecommendation | null): boolean {
-  if (recommendation) return recommendation.mode === 'ranked'
-
-  const mode = context.gameMode.toLowerCase()
-  return !['aram', 'kiwi', 'cherry', 'arena', 'nexusblitz', 'nexus_blitz', 'urf', 'arurf'].includes(mode)
-}
-
 function formatPositionText(position: OpggPosition): string {
   switch (position) {
     case 'top':
-      return translate('opgg.position.top')
+      return '上路'
     case 'jungle':
-      return translate('opgg.position.jungle')
+      return '打野'
     case 'mid':
-      return translate('opgg.position.mid')
+      return '中路'
     case 'adc':
-      return translate('opgg.position.adc')
+      return '下路'
     case 'support':
-      return translate('opgg.position.support')
+      return '辅助'
     default:
       return ''
   }
@@ -308,11 +242,13 @@ function SummaryCards({ values }: { values: string[] }) {
 }
 
 function TrendMeta({ meta }: { meta?: RecommendationMeta }) {
-  const { t } = useI18n()
   if (!meta) return null
 
   const trend = getRankTrend(meta.rankDelta)
-  const rankText = meta.rank && meta.totalRank ? `${meta.rank}/${meta.totalRank}` : meta.rank ? `#${meta.rank}` : ''
+  let rankText = ''
+  if (meta.rank) {
+    rankText = meta.totalRank ? `${meta.rank}/${meta.totalRank}` : `#${meta.rank}`
+  }
   if (trend.kind === 'unknown' && rankText) {
     return (
       <div className="sobp-meta">
@@ -326,7 +262,7 @@ function TrendMeta({ meta }: { meta?: RecommendationMeta }) {
   return (
     <div className="sobp-meta">
       <div className={`sobp-meta-trend sobp-meta-trend--${trend.kind}`}>
-        <span className="sobp-meta-label">{t('opgg.trend')}</span>
+        <span className="sobp-meta-label">{'趋势：'}</span>
         <span className="sobp-meta-value">{trend.text}</span>
         {rankText && <span className="sobp-meta-rank">{rankText}</span>}
       </div>
@@ -403,7 +339,6 @@ function getSummaryKind(value: string): SummaryKind {
 }
 
 function Section({ title, children, empty = false, emptyText }: { title: string; children: ReactNode; empty?: boolean; emptyText?: string }) {
-  const { t } = useI18n()
   return (
     <section className="sobp-section">
       <h3 className="sobp-section-title">
@@ -411,7 +346,7 @@ function Section({ title, children, empty = false, emptyText }: { title: string;
         {title}
       </h3>
       <div className="sobp-section-card">
-      {empty ? <div className="sobp-empty">{emptyText ?? t('common.noData')}</div> : children}
+      {empty ? <div className="sobp-empty">{emptyText ?? '暂无数据'}</div> : children}
       </div>
     </section>
   )
@@ -497,7 +432,6 @@ function SpellSection({ title, builds, limit }: { title: string; builds?: OpggIt
 }
 
 function MatchupSection({ title, matchups }: { title: string; matchups?: BuildRecommendation['matchups'] }) {
-  const { t } = useI18n()
   const items = matchups ?? []
   const advantages = [...items]
     .sort((a, b) => b.winRate - a.winRate || b.play - a.play)
@@ -509,10 +443,10 @@ function MatchupSection({ title, matchups }: { title: string; matchups?: BuildRe
 
   return (
     <div className="sobp-matchup-wrap">
-      <Section title={title} empty={!hasData} emptyText={t('opgg.noMatchups')}>
+      <Section title={title} empty={!hasData} emptyText={'暂无对局克制数据'}>
         <div className="sobp-matchup-columns">
-          <MatchupGroup title={t('opgg.matchup.advantage')} items={advantages} tone="good" />
-          <MatchupGroup title={t('opgg.matchup.disadvantage')} items={disadvantages} tone="bad" />
+          <MatchupGroup title={'优势对局'} items={advantages} tone="good" />
+          <MatchupGroup title={'劣势对局'} items={disadvantages} tone="bad" />
         </div>
       </Section>
     </div>
@@ -534,7 +468,7 @@ function MatchupGroup({ title, items, tone }: { title: string; items: BuildRecom
                 <span className="sobp-matchup-name" title={championName}>{championName}</span>
                 <span className="sobp-matchup-detail">
                   <span className={`sobp-matchup-rate sobp-matchup-rate--${tone}`}>{formatPercent(item.winRate)}</span>
-                  <span className="sobp-matchup-play">{item.play.toLocaleString()}场</span>
+                  <span className="sobp-matchup-play">{item.play.toLocaleString('zh-CN')}场</span>
                 </span>
               </div>
             </div>
@@ -545,8 +479,7 @@ function MatchupGroup({ title, items, tone }: { title: string; items: BuildRecom
   )
 }
 
-function RuneSection({ title, runes, championName, modeLabel }: { title: string; runes?: OpggRuneBuild[]; championName: string; modeLabel: string }) {
-  const { t } = useI18n()
+function RuneSection({ title, runes, championName, queueName }: { title: string; runes?: OpggRuneBuild[]; championName: string; queueName: string }) {
   const visibleRunes = runes?.slice(0, MAX_RECOMMENDATION_ROWS) ?? []
   const maxRate = getMaxRunePickRate(visibleRunes, 0.15)
   const [applyingKey, setApplyingKey] = useState('')
@@ -560,7 +493,7 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
     setApplyErrorKey('')
 
     try {
-      const pageName = `${championName} ${modeLabel} - Sona`
+      const pageName = `${championName} ${queueName} - Sona`
       await lcu.applyRunePage({
         name: pageName,
         primaryStyleId: rune.primary_page_id,
@@ -572,11 +505,7 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
         ],
       })
       setAppliedKey(key)
-      try {
-        await lcu.sendChampSelectMessage(t('opgg.chat.runesApplied', { championName, modeLabel }), 'celebration')
-      } catch {
-        // 非选人阶段或聊天室未就绪时忽略
-      }
+      Toast.success(`${championName} ${queueName} 符文已应用 - Sona`)
     } catch {
       setApplyErrorKey(key)
     } finally {
@@ -585,11 +514,15 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
   }
 
   return (
-    <Section title={title} empty={visibleRunes.length === 0} emptyText={t('opgg.noCustomRunes')}>
+    <Section title={title} empty={visibleRunes.length === 0} emptyText={'不支持自定义符文'}>
       {visibleRunes.map((rune, index) => {
         const applyKey = `${index}-${rune.id}`
         const keystoneId = rune.primary_rune_ids[0] ?? 0
         const keystone = getPerkInfo(keystoneId)
+        let applyLabel = '应用'
+        if (applyingKey === applyKey) applyLabel = '应用中'
+        else if (appliedKey === applyKey) applyLabel = '已应用'
+        else if (applyErrorKey === applyKey) applyLabel = '失败'
         return (
           <div className="sobp-row" key={`${index}-${rune.primary_rune_ids.join('-')}-${rune.secondary_rune_ids.join('-')}`}>
             <div className="sobp-row-main">
@@ -625,7 +558,7 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
                   void applyRune(rune, index)
                 }}
               >
-                {applyingKey === applyKey ? t('opgg.applying') : appliedKey === applyKey ? t('opgg.applied') : applyErrorKey === applyKey ? t('common.failed') : t('common.apply')}
+                {applyLabel}
               </button>
             </div>
           </div>
@@ -633,52 +566,6 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
       })}
     </Section>
   )
-}
-
-function AugmentSection({ title, groups, winRateFirst = false }: { title: string; groups?: BuildRecommendation['augments']; winRateFirst?: boolean }) {
-  const visibleGroups = groups ?? []
-
-  return (
-    <div className="sobp-augment-wrap">
-      <Section title={title} empty={visibleGroups.length === 0}>
-        {visibleGroups.map((group) => (
-          <div className="sobp-augment-group" key={group.rarity}>
-            <div className="sobp-augment-rarity">{group.label ?? getAugmentRarityLabel(group.rarity)}</div>
-            <div className="sobp-augment-grid">
-              {group.items.map((augment) => {
-                const info = getAugmentInfo(augment.id)
-                const detailText = Number.isFinite(augment.winRate)
-                  ? formatAugmentWinRateText(augment, winRateFirst)
-                  : `登场 ${formatPercent(augment.pickRate)} · 均排 ${formatPlace(augment.averagePlace)}`
-                return (
-                  <div className="sobp-augment" key={augment.id}>
-                    <BuildIcon
-                      src={info?.iconPath ?? ''}
-                      title={info?.name ?? String(augment.id)}
-                      description={info?.description ?? ''}
-                      subtitle={group.label ?? getAugmentRarityLabel(group.rarity)}
-                      size={40}
-                      border={getAugmentBorder(info?.rarity)}
-                    />
-                    <div className="sobp-augment-info">
-                      <div className="sobp-augment-name">{info?.name ?? String(augment.id)}</div>
-                      <div className="sobp-augment-meta">{detailText}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </Section>
-    </div>
-  )
-}
-
-function formatAugmentWinRateText(augment: { pickRate: number; winRate?: number }, winRateFirst: boolean): string {
-  const winRateText = `胜率 ${formatPercent(augment.winRate)}`
-  const pickRateText = `登场 ${formatPercent(augment.pickRate)}`
-  return winRateFirst ? `${winRateText} · ${pickRateText}` : `${pickRateText} · ${winRateText}`
 }
 
 function RankBadge({ rank }: { rank: number }) {
@@ -925,23 +812,4 @@ function getMaxRunePickRate(runes: OpggRuneBuild[], fallback: number): number {
 function formatPercent(value: number | undefined): string {
   if (!Number.isFinite(value)) return '-'
   return `${((value ?? 0) * 100).toFixed(1)}%`
-}
-
-function formatPlace(value: number | undefined): string {
-  if (!Number.isFinite(value)) return '-'
-  return `${(value ?? 0).toFixed(2)}名`
-}
-
-function getAugmentRarityLabel(rarity: number): string {
-  if (rarity === 1) return '银色'
-  if (rarity === 4) return '金色'
-  if (rarity === 8) return '棱彩'
-  return `稀有度 ${rarity}`
-}
-
-function getAugmentBorder(rarity: string | undefined): string {
-  if (rarity === 'kPrismatic') return '#b788ff'
-  if (rarity === 'kGold') return '#c8aa6e'
-  if (rarity === 'kSilver') return '#a09b8c'
-  return '#3c2e16'
 }

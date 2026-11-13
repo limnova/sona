@@ -1,5 +1,5 @@
+import { isSummonersRift } from '@/lib/game-mode'
 import type { SgpGameSummaryLol, SgpParticipantLol } from '@/types/sgp'
-import { translate } from '@/i18n'
 
 export type SonaStrengthRole =
   | 'TOP'
@@ -7,8 +7,6 @@ export type SonaStrengthRole =
   | 'MIDDLE'
   | 'BOTTOM'
   | 'UTILITY'
-  | 'ARAM'
-  | 'SPECIAL'
   | 'UNKNOWN'
 
 export type SonaStrengthGrade =
@@ -37,7 +35,6 @@ export interface SonaGameStrengthScore {
   championId: number
   role: SonaStrengthRole
   win: boolean
-  placement: number
   /** WeGame 风格展示分，范围 3.0 - 16.0。 */
   score: number
   breakdown: SonaScoreBreakdown
@@ -132,8 +129,19 @@ const BASE_WEIGHTS: ScoreWeights = {
   farming: 0.06,
 }
 
+const GRADE_LABELS: Record<SonaStrengthGrade, string> = {
+  legendary: '天籁主宰',
+  carry: '核心大腿',
+  strong: '稳定强点',
+  reliable: '可靠队友',
+  balanced: '均衡发挥',
+  unstable: '状态摇摆',
+  risky: '高风险点',
+  critical: '需要照顾',
+}
+
 function getGradeLabel(grade: SonaStrengthGrade): string {
-  return translate(`strength.grade.${grade}` as Parameters<typeof translate>[0])
+  return GRADE_LABELS[grade]
 }
 
 export function calculateSonaPlayerStrengthScore(
@@ -215,7 +223,7 @@ export function calculateSonaGameStrengthScore(
     return null
   }
 
-  const role = inferStrengthRole(game, participant)
+  const role = inferStrengthRole(participant)
   const weights = normalizeWeights(BASE_WEIGHTS)
   const minutes = Math.max((participant.timePlayed || game.json.gameDuration || 1) / 60, 1)
   const teamKills = sum(teamParticipants, (item) => item.kills)
@@ -253,7 +261,7 @@ export function calculateSonaGameStrengthScore(
 
   const breakdown: SonaScoreBreakdown = {
     combat: calculateCombatScore({ kda, killParticipation, deaths, minutes }),
-    win: calculateWinScore(game, participant),
+    win: calculateWinScore(participant),
     damage: calculateDamageScore(role, participant, minutes, damageShare),
     economy: calculateEconomyScore(role, participant, minutes, damageShare, goldShare),
     objectives: calculateObjectiveScore(role, participant, minutes, teamObjectiveDamage),
@@ -267,7 +275,6 @@ export function calculateSonaGameStrengthScore(
     championId: participant.championId,
     role,
     win: participant.win,
-    placement: participant.placement || participant.subteamPlacement || 0,
     score: toDisplayScore(calculateWeightedBreakdownScore(breakdown, weights)),
     breakdown,
     metrics: {
@@ -305,10 +312,11 @@ export function filterSonaStrengthGamesByQueue(
   games: SgpGameSummaryLol[],
   queueId: number,
 ): SgpGameSummaryLol[] {
-  if (!Number.isFinite(queueId) || queueId <= 0) return games
+  const supportedGames = games.filter((game) => isSummonersRift(game.json))
+  if (!Number.isFinite(queueId) || queueId <= 0) return supportedGames
 
   const queueTag = `q_${queueId}`
-  return games.filter((game) => {
+  return supportedGames.filter((game) => {
     return game.json.queueId === queueId || game.metadata.tags?.includes(queueTag)
   })
 }
@@ -351,25 +359,16 @@ export function getSonaStrengthGrade(score: number): SonaStrengthGrade {
 }
 
 export function getSonaStrengthVerdict(score: number, confidence = 1): string {
-  const prefix = confidence < 0.55 ? translate('strength.lowConfidence') : ''
+  const prefix = confidence < 0.55 ? '样本偏少，暂评' : ''
   const grade = getGradeLabel(getSonaStrengthGrade(score))
   return `${prefix}${grade}`
 }
 
 export function formatSonaStrengthScoreLine(score: SonaPlayerStrengthScore): string {
-  return translate('strength.line', {
-    grade: score.gradeLabel,
-    score: score.score.toFixed(1),
-    winRate: formatPercent(score.winRate),
-    kda: score.averageKda.toFixed(2),
-  })
+  return `${score.gradeLabel} ${score.score.toFixed(1)}分 | 胜率${formatPercent(score.winRate)} | KDA ${score.averageKda.toFixed(2)}`
 }
 
-function inferStrengthRole(game: SgpGameSummaryLol, participant: SgpParticipantLol): SonaStrengthRole {
-  const mode = game.json.gameMode
-  if (mode === 'ARAM') return 'ARAM'
-  if (mode === 'CHERRY' || mode === 'STRAWBERRY') return 'SPECIAL'
-
+function inferStrengthRole(participant: SgpParticipantLol): SonaStrengthRole {
   const position = (participant.teamPosition || participant.individualPosition || participant.lane || '').toUpperCase()
   if (position === 'TOP') return 'TOP'
   if (position === 'JUNGLE') return 'JUNGLE'
@@ -391,17 +390,7 @@ function calculateCombatScore(input: {
   return toPercent(kdaScore * 0.38 + participationScore * 0.42 + deathSafetyScore * 0.2)
 }
 
-function calculateWinScore(game: SgpGameSummaryLol, participant: SgpParticipantLol): number {
-  const mode = game.json.gameMode
-  const placement = participant.placement || participant.subteamPlacement || 0
-
-  if ((mode === 'CHERRY' || mode === 'STRAWBERRY') && placement > 0) {
-    if (placement <= 1) return 100
-    if (placement <= 2) return 86
-    if (placement <= 4) return 64
-    return 18
-  }
-
+function calculateWinScore(participant: SgpParticipantLol): number {
   return participant.win ? 100 : 18
 }
 
@@ -411,7 +400,8 @@ function calculateDamageScore(
   minutes: number,
   damageShare: number,
 ): number {
-  const excellentShare = role === 'UTILITY' ? 0.2 : role === 'ARAM' ? 0.26 : 0.29
+  let excellentShare = 0.29
+  if (role === 'UTILITY') excellentShare = 0.2
   const shareScore = scoreRange(damageShare, role === 'UTILITY' ? 0.06 : 0.1, excellentShare)
   const damagePerMinute = getChallengeNumber(participant, 'damagePerMinute') ||
     safeDivide(participant.totalDamageDealtToChampions, minutes)
@@ -421,8 +411,6 @@ function calculateDamageScore(
     MIDDLE: 730,
     BOTTOM: 760,
     UTILITY: 360,
-    ARAM: 950,
-    SPECIAL: 720,
     UNKNOWN: 620,
   })
   const dpmScore = scoreRange(damagePerMinute, dpmTarget * 0.42, dpmTarget)
@@ -445,8 +433,6 @@ function calculateEconomyScore(
     MIDDLE: 430,
     BOTTOM: 455,
     UTILITY: 285,
-    ARAM: 470,
-    SPECIAL: 430,
     UNKNOWN: 395,
   })
   const gpmScore = scoreRange(goldPerMinute, gpmTarget * 0.58, gpmTarget)
@@ -468,7 +454,9 @@ function calculateObjectiveScore(
     getChallengeNumber(participant, 'dragonTakedowns') +
     getChallengeNumber(participant, 'baronTakedowns')
   const turretTakedowns = getChallengeNumber(participant, 'turretTakedowns') || participant.turretTakedowns
-  const objectiveTarget = role === 'JUNGLE' ? 360 : role === 'BOTTOM' ? 290 : 230
+  let objectiveTarget = 230
+  if (role === 'JUNGLE') objectiveTarget = 360
+  else if (role === 'BOTTOM') objectiveTarget = 290
 
   const objectiveDamageScore = scoreRange(objectiveDamagePerMinute, 20, objectiveTarget)
   const objectiveShareScore = scoreRange(objectiveShare, 0.08, role === 'JUNGLE' ? 0.45 : 0.32)
@@ -489,8 +477,6 @@ function calculateVisionScore(
     MIDDLE: 0.75,
     BOTTOM: 0.65,
     UTILITY: 1.65,
-    ARAM: 0.28,
-    SPECIAL: 0.25,
     UNKNOWN: 0.75,
   })
   const visionScore = scoreRange(visionPerMinute, target * 0.28, target)
@@ -537,8 +523,6 @@ function calculateFarmingScore(role: SonaStrengthRole, csPerMinute: number): num
     MIDDLE: 7.4,
     BOTTOM: 7.8,
     UTILITY: 1.3,
-    ARAM: 4.2,
-    SPECIAL: 4.5,
     UNKNOWN: 6.2,
   })
   return toPercent(scoreRange(csPerMinute, target * 0.35, target))
@@ -668,6 +652,7 @@ function shouldSkipSonaGameForParticipant(
   participant: SgpParticipantLol,
   options: SonaStrengthScoreOptions,
 ): boolean {
+  if (!isSummonersRift(game.json)) return true
   if (options.skipEarlySurrender && (participant.gameEndedInEarlySurrender || participant.teamEarlySurrendered)) {
     return true
   }

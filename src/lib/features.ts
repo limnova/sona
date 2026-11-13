@@ -10,39 +10,11 @@ import { store } from '@/lib/store'
 import { lcu, LcuEventUri, queueIdToTag } from '@/lib/lcu'
 import type { LCUEventMessage, GameflowPhase, ChampSelectSession } from '@/lib/lcu'
 import { injector } from '@/lib/InjectorManager'
-import { sleep } from '@/lib/utils'
-import { updateBalanceBuffTooltip } from '@/lib/features/balance-buff-viewer'
-import { updateChampSelectQuitButton } from '@/lib/features/champselect-quit-button'
-import { updateAutoAccept } from '@/lib/features/auto-accept'
-import { updateAllowDeclineAfterAccept } from '@/lib/features/ready-check-control'
-import { updateHideEsportsPopup } from '@/lib/features/hide-esports-popup'
-import { updateDebugGameflow } from '@/lib/features/debug-gameflow'
-import { updateUnlockStatus } from '@/lib/features/unlock-status'
-import { updateBenchNoCooldown } from '@/lib/features/bench-no-cooldown'
-import { updateGlobalParticle } from '@/lib/features/global-particle'
-import { updateFriendSmartGroup } from '@/lib/features/friend-smart-group'
-import { updateEnhancedFriendGameStatus } from '@/lib/features/enhanced-friend-game-status'
+import { isSummonersRiftChampSelect } from '@/lib/game-context'
 import { updateLobbyMemberMatchHistory } from '@/lib/features/lobby-member-match-history'
-import { updateAutoHonor } from '@/lib/features/auto-honor'
-import { updateAutoLockChampion } from '@/lib/features/auto-lock-champion'
-import { updateAutoBanChampion } from '@/lib/features/auto-ban-champion'
-import { applyRankDisguise, updateRankDisguise } from '@/lib/features/rank-disguise'
-import { updateCustomProfileBg } from '@/lib/features/profile-background'
-import { updateCustomBanner } from '@/lib/features/custom-banner'
 import { updateGameAnalysisPopup } from '@/lib/features/game-analysis-popup'
-import { updateAutoReturnToLobby } from '@/lib/features/auto-return-to-lobby'
 import { updateOpggBuildRecommendation } from '@/lib/features/opgg-build-recommendation'
-import { updateBeautifyCustomAvatar } from '@/lib/features/beautify-client/custom-avatar'
-import { initSocialSidebarGlass, updateSocialSidebarGlassConfig } from '@/lib/features/beautify-client/social-sidebar-glass'
-import { initBeautifyNavbarBlur, updateBeautifyNavbarBlur } from '@/lib/features/beautify-client/navbar-blur'
-import { initBeautifyNavbarLines, updateBeautifyNavbarLines } from '@/lib/features/beautify-client/navbar-lines'
-import { initSummonerNameEffect, updateSummonerNameEffect } from '@/lib/features/beautify-client/summoner-name-effect'
-import { updateBeautifyHomepageBackground, updateBeautifyHomepageBackgroundAdjustments, updateBeautifyHomepageBackgroundGlassConfig } from '@/lib/features/beautify-client/homepage-background'
-import { updateBeautifyWallpaperMode, updateBeautifyWallpaperModeGlassConfig, updateBeautifyWallpaperSceneConfig } from '@/lib/features/beautify-client/wallpaper-mode'
-import { updateGameModeFilter } from '@/lib/features/game-mode-filter'
-import { updateQuickLobbyMode } from '@/lib/features/quick-lobby-mode'
 import { preloadChampSelectTierBadgeData, updateChampSelectTierBadge } from '@/lib/features/champselect-tier-badge'
-import { setAvailabilityHijackEnabled, setHideTFTEnabled, setHideClassicModeEnabled, setHideRightNavTextEnabled } from '@/lib/injections'
 import {
   calculateSonaPlayerStrengthScore,
   filterSonaStrengthGamesByQueue,
@@ -50,7 +22,6 @@ import {
   type SonaPlayerStrengthScore,
 } from '@/lib/player-strength-score'
 import { deobfuscateChampSelectPuuid } from '@/lib/champ-select-puuid'
-import { translate } from '@/i18n'
 
 // ==================== 共享：查询队友胜率 ====================
 
@@ -75,10 +46,8 @@ interface TeammateStats {
 }
 
 interface TeamStatsResult {
-  isBlue: boolean
   stats: TeammateStats[]
   queueId: number
-  fetchCount: number
 }
 
 function getPlayerStatsKey(player: Pick<ChampSelectTeamPlayer, 'puuid' | 'summonerId' | 'obfuscatedPuuid' | 'obfuscatedSummonerId' | 'cellId'>): string {
@@ -108,31 +77,14 @@ function resolveChampSelectPuuid(player: ChampSelectTeamPlayer): string {
   return deobfuscateChampSelectPuuid(player.obfuscatedPuuid)
 }
 
-/** 去重：同一个 ChampSelect 阶段多个功能需要同一份数据时，复用同一轮请求 */
-let _fetchTeamStatsPromise: Promise<TeamStatsResult> | null = null
-
 /**
  * 查询当前选人阶段所有队友的近期战绩
- * 使用 SGP 接口 + tag 参数按当前游戏模式服务端过滤，拉 100 条
- * 返回 { isBlue, queueId, stats[], fetchCount }
- *
- * 多次并发调用会复用同一轮请求（promise 去重）
+ * 头像战绩与队内评级共用一次查询，按当前模式及配置的局数过滤。
+ * 返回队列 ID 与队友统计。
  */
 async function fetchTeamStats(): Promise<TeamStatsResult> {
-  if (_fetchTeamStatsPromise) return _fetchTeamStatsPromise
-
-  _fetchTeamStatsPromise = _doFetchTeamStats()
-  try {
-    return await _fetchTeamStatsPromise
-  } finally {
-    _fetchTeamStatsPromise = null
-  }
-}
-
-async function _doFetchTeamStats(): Promise<TeamStatsResult> {
   const session = await lcu.getChampSelectSession()
-  const localPlayer = session.myTeam.find((p) => p.cellId === session.localPlayerCellId)
-  const isBlue = localPlayer ? localPlayer.cellId < 5 : true
+  if (!await isSummonersRiftChampSelect(session)) return { queueId: session.queueId, stats: [] }
 
   // 直接从 ChampSelectSession 拿 queueId，无需额外请求
   const currentQueueId = session.queueId
@@ -143,8 +95,9 @@ async function _doFetchTeamStats(): Promise<TeamStatsResult> {
 
   // 取两个功能中较大的查询局数，确保数据充足（两者共用同一轮请求）
   const FETCH_COUNT = Math.max(
-    store.get('champSelectAssistFetchCount') || 50,
-    store.get('analyzeTeamPowerFetchCount') || 50,
+    store.get('champSelectAssist') ? (store.get('champSelectAssistFetchCount') || 50) : 0,
+    store.get('analyzeTeamPower') ? (store.get('analyzeTeamPowerFetchCount') || 50) : 0,
+    20,
   )
 
   /** 构造占位元素：查询失败时仍保留身份信息，供弹窗标题与换楼匹配使用 */
@@ -171,7 +124,7 @@ async function _doFetchTeamStats(): Promise<TeamStatsResult> {
     strengthScore: null,
   })
 
-  // 跳过查不到数据的占位玩家（斗魂模式 myTeam 含空位），其余保留占位以对齐楼层索引
+  // 跳过查不到身份数据的占位玩家，其余保留占位以对齐楼层索引。
   const analyzablePlayers = getAnalyzableTeamPlayers(session)
   const hiddenPlayers = analyzablePlayers.filter((player) => player.nameVisibilityType === 'HIDDEN' && !player.puuid)
   if (hiddenPlayers.length > 0) {
@@ -284,7 +237,7 @@ async function _doFetchTeamStats(): Promise<TeamStatsResult> {
     }
   }))
 
-  return { isBlue, queueId: currentQueueId, stats, fetchCount: FETCH_COUNT }
+  return { queueId: currentQueueId, stats }
 }
 
 // ==================== 选人阶段头像胜率特效 (champSelectAssist) ====================
@@ -526,8 +479,6 @@ function applyHiddenPlayerName(wrapper: Element, stat: TeammateStats, playerKey:
 
 /**
  * 过滤掉查不到数据的占位玩家：puuid 与 obfuscatedPuuid 均为空字符串。
- * 斗魂（Arena）模式所有玩家都在 myTeam（16 人）且夹杂空位占位，
- * 跳过它们避免楼层错位与无意义展示。
  */
 function getAnalyzableTeamPlayers(session: ChampSelectSession): ChampSelectTeamPlayer[] {
   return session.myTeam.filter((player) => Boolean(player.puuid) || Boolean(player.obfuscatedPuuid))
@@ -610,6 +561,8 @@ function tryInjectChampSelectTier(): boolean {
     cleanupInjectedDOM()
   }
 
+  const teamPowerTitles = assignTeamPowerTitles(floorStats)
+
   wrappers.forEach((wrapper, i) => {
     const stat = floorStats[i]
     if (!stat) return
@@ -677,24 +630,38 @@ function tryInjectChampSelectTier(): boolean {
         const summonerContainer = playerDetails.closest('.summoner-container') as HTMLElement | null
         if (summonerContainer) summonerContainer.style.overflow = 'visible'
 
-        const kdaStr = stat.kdaNum >= 99 ? 'Perfect' : stat.kdaNum.toFixed(1)
-        const winColor = winRate >= 55 ? '#5bbd72' : winRate >= 45 ? '#c8aa6e' : '#e74c3c'
+        const kdaStr = stat.kdaNum >= 99 ? '完美' : stat.kdaNum.toFixed(1)
+        let winColor = '#e74c3c'
+        if (winRate >= 55) winColor = '#5bbd72'
+        else if (winRate >= 45) winColor = '#c8aa6e'
 
         const statsDiv = document.createElement('div')
         statsDiv.setAttribute(SONA_STATS_ATTR, 'true')
-        statsDiv.style.cssText = 'position:absolute;left:0;top:100%;display:flex;align-items:center;font-size:11px;line-height:1;white-space:nowrap;margin-top:2px;'
+        statsDiv.style.cssText = 'position:absolute;left:0;top:100%;display:flex;flex-wrap:wrap;align-items:center;gap:3px 0;font-size:11px;line-height:1.2;white-space:nowrap;margin-top:2px;'
 
         const winSpan = document.createElement('span')
         winSpan.style.cssText = `color:${winColor};font-weight:bold;display:inline-block;min-width:90px;`
         winSpan.textContent = `${winRate.toFixed(0)}% (${stat.wins}胜/${stat.total - stat.wins}负)`
 
-        const kdaColor = stat.kdaNum >= 5 ? '#5bbd72' : stat.kdaNum >= 3 ? '#c8aa6e' : '#e74c3c'
+        let kdaColor = '#e74c3c'
+        if (stat.kdaNum >= 5) kdaColor = '#5bbd72'
+        else if (stat.kdaNum >= 3) kdaColor = '#c8aa6e'
         const kdaSpan = document.createElement('span')
         kdaSpan.style.cssText = `color:${kdaColor};margin-left:8px;font-weight:bold;text-shadow:0 0 4px rgba(200,170,110,0.6);`
         kdaSpan.textContent = `KDA ${kdaStr}`
 
         statsDiv.appendChild(winSpan)
         statsDiv.appendChild(kdaSpan)
+        if (store.get('analyzeTeamPower')) {
+          const titleSpan = document.createElement('span')
+          titleSpan.setAttribute('data-sona-team-power', 'true')
+          titleSpan.style.cssText = 'flex-basis:100%;color:#c8aa6e;font-weight:bold;'
+          const title = teamPowerTitles.get(playerKey) ?? '🆕 萌新上线'
+          const score = stat.strengthScore?.score.toFixed(1) ?? '--'
+          titleSpan.textContent = `${title} · ${score}`
+          titleSpan.title = `本模式有效样本：近${stat.total}场`
+          statsDiv.appendChild(titleSpan)
+        }
         playerDetails.appendChild(statsDiv)
 
         // 记录注入引用，离开 ChampSelect 时直接清理
@@ -719,6 +686,7 @@ function tryInjectChampSelectTier(): boolean {
 
 
 let tierInjectionRegistered = false
+let champSelectStatsRequestId = 0
 
 function registerTierInjection() {
   if (!tierInjectionRegistered) {
@@ -728,6 +696,7 @@ function registerTierInjection() {
 }
 
 function unregisterTierInjection() {
+  champSelectStatsRequestId++
   if (tierInjectionRegistered) {
     injector.unregister(tryInjectChampSelectTier)
     tierInjectionRegistered = false
@@ -748,13 +717,19 @@ function unregisterTierInjection() {
 
 /** 查询胜率并启动头像特效注入 */
 async function applyChampSelectIconEffects() {
+  if (!store.get('champSelectAssist') && !store.get('analyzeTeamPower')) return
   try {
     // 先清理上一局的残留
     unregisterTierInjection()
+    const requestId = champSelectStatsRequestId
 
     const { stats, queueId } = await fetchTeamStats()
+    if (requestId !== champSelectStatsRequestId) return
+    if (stats.length === 0) return
+    const session = await lcu.getChampSelectSession()
+    if (requestId !== champSelectStatsRequestId || session.queueId !== queueId) return
+    if (!await isSummonersRiftChampSelect(session) || requestId !== champSelectStatsRequestId) return
     currentChampSelectQueueId = queueId
-    floorStats = stats
     // 建立 puuid → stats 映射，换楼后可用新 myTeam 顺序重建 floorStats
     statsByPuuid.clear()
     statsBySummonerId.clear()
@@ -766,7 +741,9 @@ async function applyChampSelectIconEffects() {
       if (s.obfuscatedPuuid) statsByObfuscatedPuuid.set(s.obfuscatedPuuid, s)
       if (s.obfuscatedSummonerId) statsByObfuscatedSummonerId.set(s.obfuscatedSummonerId, s)
     }
-    currentChampSelectTeamSignature = stats.map(getTeammateStatsKey).join('|')
+    // 查询过程中也可能换楼，按最新会话绑定头像与评级。
+    floorStats = buildFloorStatsFromSession(session)
+    currentChampSelectTeamSignature = getTeamDisplaySignature(session)
     registerTierInjection()
 
     logger.info('头像特效数据就绪，%d 位队友，队列 ID: %d', stats.length, currentChampSelectQueueId)
@@ -796,6 +773,11 @@ function onChampSelectUpdate(event: LCUEventMessage) {
 
   const session = event.data as ChampSelectSession
   if (!session?.myTeam) return
+  if (session.queueId !== currentChampSelectQueueId) {
+    unregisterTierInjection()
+    void applyChampSelectIconEffects()
+    return
+  }
 
   const nextSignature = getTeamDisplaySignature(session)
   if (nextSignature === currentChampSelectTeamSignature) return
@@ -874,28 +856,28 @@ function updateChampSelectAssist(enabled: boolean) {
  * 根据胜率和 KDA 给出 LOL 风格幽默评价
  */
 export function getRating(winRate: number, kda: number): string {
-  if (winRate >= 75 && kda >= 4.5) return translate('champSelect.rating.godlike')
-  if (winRate >= 70) return translate('champSelect.rating.smurf')
-  if (winRate >= 65) return translate('champSelect.rating.hardCarry')
-  if (winRate >= 60) return translate('champSelect.rating.specialist')
-  if (winRate >= 56) return translate('champSelect.rating.steady')
-  if (winRate >= 52) return translate('champSelect.rating.helper')
-  if (winRate >= 48) return translate('champSelect.rating.swing')
-  if (winRate >= 45) return translate('champSelect.rating.holding')
-  if (winRate >= 41) return translate('champSelect.rating.autofill')
-  if (winRate >= 37) return translate('champSelect.rating.losing')
-  if (winRate >= 33) return translate('champSelect.rating.breakpoint')
-  if (winRate >= 28) return translate('champSelect.rating.atm')
-  if (winRate >= 20) return translate('champSelect.rating.surrender')
-  return translate('champSelect.rating.actor')
+  if (winRate >= 75 && kda >= 4.5) return '👑 峡谷通天代'
+  if (winRate >= 70) return '🚀 降维来炸鱼'
+  if (winRate >= 65) return '🔥 绝对真大腿'
+  if (winRate >= 60) return '⚔️ 绝活哥出列'
+  if (winRate >= 56) return '✨ 稳健老司机'
+  if (winRate >= 52) return '🛡️ 上分好帮手'
+  if (winRate >= 48) return '🎲 峡谷摇摆人'
+  if (winRate >= 45) return '🫠 默默抗压中'
+  if (winRate >= 41) return '🍂 随缘在补位'
+  if (winRate >= 37) return '💀 连败渡劫中'
+  if (winRate >= 33) return '🤡 敌方突破口'
+  if (winRate >= 28) return '💸 峡谷提款机'
+  if (winRate >= 20) return '🏳️ 投降发起人'
+  return '☠️ 演员已就位'
 }
 
-const TEAM_POWER_TITLE_KEYS = [
-  'strength.teamTier.ace',
-  'strength.teamTier.high',
-  'strength.teamTier.mid',
-  'strength.teamTier.low',
-  'strength.teamTier.burden',
+const TEAM_POWER_TITLES = [
+  '🦄 千里马',
+  '🏇 上等马',
+  '🐎 中等马',
+  '🐴 下等马',
+  '🐂 纯牛马',
 ] as const
 
 function assignTeamPowerTitles(stats: TeammateStats[]): Map<string, string> {
@@ -905,228 +887,30 @@ function assignTeamPowerTitles(stats: TeammateStats[]): Map<string, string> {
 
   const titles = new Map<string, string>()
   ranked.forEach((stat, index) => {
-    titles.set(getTeammateStatsKey(stat), translate(TEAM_POWER_TITLE_KEYS[Math.min(index, TEAM_POWER_TITLE_KEYS.length - 1)]))
+    titles.set(getTeammateStatsKey(stat), TEAM_POWER_TITLES[Math.min(index, TEAM_POWER_TITLES.length - 1)])
   })
 
   return titles
 }
 
-async function analyzeTeammates() {
-  try {
-    const { stats, fetchCount } = await fetchTeamStats()
-
-    logger.info('┌─── 队友战绩分析 ───')
-
-    const chatLines: string[] = [translate('champSelect.teamAnalysis.header', { count: fetchCount })]
-    const teamPowerTitles = assignTeamPowerTitles(stats)
-
-    for (const s of stats) {
-      const floor = translate('champSelect.teamAnalysis.floor', { floor: s.floor })
-      if (s.winRate == null) {
-        logger.info('│ %s — %s#%s — 无近期战绩或查询失败', floor, s.gameName, s.tagLine)
-        chatLines.push(translate('champSelect.teamAnalysis.emptyLine', { floor }))
-        continue
-      }
-
-      const winRate = s.winRate.toFixed(1)
-      const kdaStr = s.kdaNum >= 99 ? 'Perfect' : s.kdaNum.toFixed(2)
-      const title = teamPowerTitles.get(getTeammateStatsKey(s)) ?? translate('strength.teamTier.newbie')
-      const scoreText = s.strengthScore ? s.strengthScore.score.toFixed(1) : '--'
-
-      logger.info(
-        '│ %s — %s#%s — 近%d场 胜率: %s%% (%d胜%d负) | KDA: %s (%.1f/%.1f/%.1f) | 综合评分: %s | %s',
-        floor, s.gameName, s.tagLine,
-        s.total, winRate, s.wins, s.total - s.wins,
-        kdaStr, s.avgK, s.avgD, s.avgA, scoreText, title,
-      )
-
-      chatLines.push(translate('champSelect.teamAnalysis.line', { floor, title, winRate, kda: kdaStr, score: scoreText }))
-    }
-
-    logger.info('└────────────────────')
-
-    // 等待聊天室就绪后发送
-    const msg = chatLines.join('\n')
-    const msgType = store.get('analyzeTeamPowerMsgType') || 'celebration'
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        await lcu.sendChampSelectMessage(msg, msgType)
-        logger.info('队友分析已发送到聊天框 ✓')
-        break
-      } catch {
-        if (attempt < 9) {
-          await sleep(1000)
-        } else {
-          logger.warn('聊天发送失败，聊天室始终未就绪')
-        }
-      }
-    }
-  } catch (err) {
-    logger.error('队友战绩分析失败:', err)
-  }
-}
-
-let analyzeTeamPowerUnsub: (() => void) | null = null
-
-function updateAnalyzeTeamPower(enabled: boolean) {
-  if (enabled && !analyzeTeamPowerUnsub) {
-    analyzeTeamPowerUnsub = lcu.observe(LcuEventUri.GAMEFLOW_PHASE_CHANGE, (event: LCUEventMessage) => {
-      const phase = event.data as GameflowPhase
-      if (phase === 'ChampSelect') {
-        analyzeTeammates()
-      }
-    })
-    logger.info('Analyze team power enabled ✓')
-  } else if (!enabled && analyzeTeamPowerUnsub) {
-    analyzeTeamPowerUnsub()
-    analyzeTeamPowerUnsub = null
-    logger.info('Analyze team power disabled')
-  }
-}
-
-// ==================== 选人阶段红蓝方提示 ====================
-
-async function sendSideIndicator() {
-  try {
-    const session = await lcu.getChampSelectSession()
-    const localPlayer = session.myTeam.find((p) => p.cellId === session.localPlayerCellId)
-    const isBlue = localPlayer ? localPlayer.cellId < 5 : true
-    const sideText = isBlue ? translate('champSelect.side.blue') : translate('champSelect.side.red')
-
-    // 注意：选人阶段暂时拿不到本局大乱斗随机地图。
-    // 实测 /lol-gameflow/v1/session 的 map.gameMutator / mapMutator 在 ChampSelect 阶段为空字符串，
-    // 客户端应当是进入游戏后才知道本局随机到嚎哭深渊、屠夫之桥或莲华栈桥，因此这里不展示地图名。
-    const msg = translate('champSelect.side.message', { side: sideText })
-    const msgType = store.get('sideIndicatorMsgType') || 'celebration'
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        await lcu.sendChampSelectMessage(msg, msgType)
-        logger.info('红蓝方提示已发送 → %s', sideText)
-        break
-      } catch {
-        if (attempt < 9) {
-          await sleep(1000)
-        } else {
-          logger.warn('红蓝方提示发送失败，聊天室始终未就绪')
-        }
-      }
-    }
-  } catch (err) {
-    logger.error('红蓝方提示失败:', err)
-  }
-}
-
-let sideIndicatorUnsub: (() => void) | null = null
-
-function updateSideIndicator(enabled: boolean) {
-  if (enabled && !sideIndicatorUnsub) {
-    sideIndicatorUnsub = lcu.observe(LcuEventUri.GAMEFLOW_PHASE_CHANGE, (event: LCUEventMessage) => {
-      const phase = event.data as GameflowPhase
-      if (phase === 'ChampSelect') {
-        sendSideIndicator()
-      }
-    })
-    logger.info('Side indicator enabled ✓')
-  } else if (!enabled && sideIndicatorUnsub) {
-    sideIndicatorUnsub()
-    sideIndicatorUnsub = null
-    logger.info('Side indicator disabled')
-  }
-}
-
-// ==================== 初始化 ====================
-
-
-/**
- * 初始化所有功能
- * 根据 store 当前值启用功能，并监听后续变化
- */
-function syncSocialSidebarGlassConfig() {
-  const config = {
-    blur: store.get('beautifyGlassBlur'),
-    opacity: store.get('beautifyGlassOpacity'),
-  }
-
-  updateSocialSidebarGlassConfig(config)
-  updateBeautifyWallpaperModeGlassConfig(config)
-}
-
-function syncWallpaperSceneConfig() {
-  updateBeautifyWallpaperSceneConfig({
-    blur: store.get('beautifyWallpaperSceneBlur'),
-    opacity: store.get('beautifyWallpaperSceneOpacity'),
-  })
-}
-
-function syncHomepageBackgroundGlassConfig() {
-  updateBeautifyHomepageBackgroundGlassConfig({
-    blur: store.get('beautifyHomepageBackgroundBlur'),
-    opacity: store.get('beautifyHomepageBackgroundOpacity'),
-  })
-}
-
-/**
- * 自定义主页背景只在壁纸模式开启时挂载。
- * 关闭模式时传入 null 会注销注入任务，并移除 viewport 下的视频和背景样式；
- * 已选择的资源路径仍保留在 store 中，重新开启后可以直接恢复。
- */
-function syncHomepageBackground() {
-  updateBeautifyHomepageBackground(
-    store.get('beautifyWallpaperMode')
-      ? store.get('beautifyHomepageBackgroundAssetPath')
-      : null,
-  )
-}
-
-function syncWallpaperMode() {
-  updateBeautifyWallpaperMode(store.get('beautifyWallpaperMode'))
-  syncHomepageBackground()
-}
-
-function pickRandomHomepageBackgroundOnStartup() {
-  if (!store.get('beautifyHomepageBackgroundRandom')) return
-
-  const assetPaths = store.get('beautifyHomepageBackgroundAssetPaths').filter(Boolean)
-  if (assetPaths.length === 0) return
-
-  const lastAssetPath = store.get('beautifyHomepageBackgroundLastRandomAssetPath')
-  const candidates = assetPaths.length > 1
-    ? assetPaths.filter((assetPath) => assetPath !== lastAssetPath)
-    : assetPaths
-  const selectedAssetPath = candidates[Math.floor(Math.random() * candidates.length)]
-  if (!selectedAssetPath) return
-
-  store.set('beautifyHomepageBackgroundAssetPath', selectedAssetPath)
-  store.set('beautifyHomepageBackgroundLastRandomAssetPath', selectedAssetPath)
-  logger.info('[HomepageBackground] 随机启动壁纸：%s', selectedAssetPath)
+/** Refresh the shared avatar view when its display options or sample size change. */
+function refreshChampSelectStats() {
+  const enabled = store.get('champSelectAssist') || store.get('analyzeTeamPower')
+  updateChampSelectAssist(enabled)
+  if (!enabled) return
+  void lcu.getGameflowPhase().then((phase) => {
+    if (phase === 'ChampSelect') void applyChampSelectIconEffects()
+  }).catch((error) => logger.warn('[ChampSelect] 无法刷新队友战绩:', error))
 }
 
 export function initFeatures() {
   preloadChampSelectTierBadgeData()
 
-  updateAutoAccept(store.get('autoAcceptMatch'))
-  store.onChange('autoAcceptMatch', updateAutoAccept)
-
-  updateAllowDeclineAfterAccept(store.get('allowDeclineAfterAccept'))
-  store.onChange('allowDeclineAfterAccept', updateAllowDeclineAfterAccept)
-
-  updateDebugGameflow(store.get('developerMode'))
-  store.onChange('developerMode', updateDebugGameflow)
-
-  updateUnlockStatus(store.get('unlockStatus'))
-  store.onChange('unlockStatus', updateUnlockStatus)
-
-  updateBenchNoCooldown(store.get('benchNoCooldown'))
-  store.onChange('benchNoCooldown', updateBenchNoCooldown)
-
-  updateAnalyzeTeamPower(store.get('analyzeTeamPower'))
-  store.onChange('analyzeTeamPower', updateAnalyzeTeamPower)
-
-  updateSideIndicator(store.get('sideIndicator'))
-  store.onChange('sideIndicator', updateSideIndicator)
-
-  updateChampSelectAssist(store.get('champSelectAssist'))
-  store.onChange('champSelectAssist', updateChampSelectAssist)
+  refreshChampSelectStats()
+  store.onChange('champSelectAssist', refreshChampSelectStats)
+  store.onChange('analyzeTeamPower', refreshChampSelectStats)
+  store.onChange('champSelectAssistFetchCount', refreshChampSelectStats)
+  store.onChange('analyzeTeamPowerFetchCount', refreshChampSelectStats)
 
   updateChampSelectTierBadge(store.get('champSelectTierBadge'))
   store.onChange('champSelectTierBadge', updateChampSelectTierBadge)
@@ -1143,130 +927,11 @@ export function initFeatures() {
   store.onChange('smartBuildRecommendation', updateOpggLifecycle)
   store.onChange('smartItemSetBuild', updateOpggLifecycle)
 
-  updateGlobalParticle(store.get('globalParticle'))
-  store.onChange('globalParticle', updateGlobalParticle)
-
-  updateFriendSmartGroup(store.get('friendSmartGroup'))
-  store.onChange('friendSmartGroup', updateFriendSmartGroup)
-
-  updateEnhancedFriendGameStatus(store.get('enhancedFriendGameStatus'))
-  store.onChange('enhancedFriendGameStatus', updateEnhancedFriendGameStatus)
-
   updateLobbyMemberMatchHistory(store.get('lobbyEnhancement'))
   store.onChange('lobbyEnhancement', updateLobbyMemberMatchHistory)
-
-  updateCustomProfileBg(store.get('customProfileBg'))
-  store.onChange('customProfileBg', updateCustomProfileBg)
-
-  updateCustomBanner(store.get('customBanner'))
-  store.onChange('customBanner', updateCustomBanner)
-
-  updateBeautifyCustomAvatar()
-  store.onChange('customAvatarAssetPaths', updateBeautifyCustomAvatar)
-
-  initSocialSidebarGlass()
-  syncSocialSidebarGlassConfig()
-  store.onChange('beautifyGlassBlur', syncSocialSidebarGlassConfig)
-  store.onChange('beautifyGlassOpacity', syncSocialSidebarGlassConfig)
-
-  initBeautifyNavbarBlur()
-  updateBeautifyNavbarBlur(store.get('beautifyNavbarBlur'))
-  store.onChange('beautifyNavbarBlur', updateBeautifyNavbarBlur)
-
-  initBeautifyNavbarLines()
-  updateBeautifyNavbarLines(store.get('beautifyNavbarHideLines'))
-  store.onChange('beautifyNavbarHideLines', updateBeautifyNavbarLines)
-
-  initSummonerNameEffect()
-  updateSummonerNameEffect(store.get('beautifySummonerNameEffect'))
-  store.onChange('beautifySummonerNameEffect', updateSummonerNameEffect)
-
-  syncHomepageBackgroundGlassConfig()
-  store.onChange('beautifyHomepageBackgroundBlur', syncHomepageBackgroundGlassConfig)
-  store.onChange('beautifyHomepageBackgroundOpacity', syncHomepageBackgroundGlassConfig)
-  updateBeautifyHomepageBackgroundAdjustments(store.get('beautifyHomepageBackgroundAdjustments'))
-  store.onChange('beautifyHomepageBackgroundAdjustments', updateBeautifyHomepageBackgroundAdjustments)
-  pickRandomHomepageBackgroundOnStartup()
-  store.onChange('beautifyHomepageBackgroundAssetPath', syncHomepageBackground)
-
-  syncWallpaperMode()
-  store.onChange('beautifyWallpaperMode', syncWallpaperMode)
-
-  syncWallpaperSceneConfig()
-  store.onChange('beautifyWallpaperSceneBlur', syncWallpaperSceneConfig)
-  store.onChange('beautifyWallpaperSceneOpacity', syncWallpaperSceneConfig)
-
-  updateAutoHonor(store.get('autoHonor'))
-  store.onChange('autoHonor', updateAutoHonor)
-
-  // 段位伪装：启动时自动应用，配置变化时重新应用
-  updateRankDisguise(store.get('rankDisguise'))
-  store.onChange('rankDisguise', updateRankDisguise)
-  // 队列/段位/子段位变化时，如果开关开着就重新应用
-  store.onChange('rankQueue', () => { if (store.get('rankDisguise')) applyRankDisguise() })
-  store.onChange('rankTier', () => { if (store.get('rankDisguise')) applyRankDisguise() })
-  store.onChange('rankDivision', () => { if (store.get('rankDisguise')) applyRankDisguise() })
-
-  updateAutoLockChampion(store.get('autoLockChampion'))
-  store.onChange('autoLockChampion', updateAutoLockChampion)
-
-  updateAutoBanChampion(store.get('autoBanChampion'))
-  store.onChange('autoBanChampion', updateAutoBanChampion)
-  store.onChange('autoBanChampionIds', () => updateAutoBanChampion(store.get('autoBanChampion')))
-
-  updateBalanceBuffTooltip(store.get('balanceBuffTooltip'))
-  store.onChange('balanceBuffTooltip', updateBalanceBuffTooltip)
-
-  updateChampSelectQuitButton(store.get('champSelectQuitButton'))
-  store.onChange('champSelectQuitButton', updateChampSelectQuitButton)
 
   updateGameAnalysisPopup(store.get('gameAnalysisPopup'))
   store.onChange('gameAnalysisPopup', updateGameAnalysisPopup)
 
-  updateAutoReturnToLobby(store.get('autoReturnToLobby'))
-  store.onChange('autoReturnToLobby', updateAutoReturnToLobby)
-  store.onChange('autoReturnMode', () => {
-    // 模式变化时，如果功能已启用，重新注册以应用新模式
-    if (store.get('autoReturnToLobby')) {
-      updateAutoReturnToLobby(false)
-      updateAutoReturnToLobby(true)
-    }
-  })
-
-  // 解锁在线状态切换（接管客户端按钮，弹自定义"隐身/手机在线"菜单）
-  setAvailabilityHijackEnabled(store.get('unlockAvailability'))
-  store.onChange('unlockAvailability', setAvailabilityHijackEnabled)
-
-  // 隐藏云顶之弈入口
-  setHideTFTEnabled(store.get('hideTFT'))
-  store.onChange('hideTFT', setHideTFTEnabled)
-
-  // 隐藏经典模式入口
-  setHideClassicModeEnabled(store.get('hideClassicMode'))
-  store.onChange('hideClassicMode', setHideClassicModeEnabled)
-
-  // 隐藏主页右侧导航栏文字
-  setHideRightNavTextEnabled(store.get('hideRightNavText'))
-  store.onChange('hideRightNavText', setHideRightNavTextEnabled)
-
-  // 关闭右下角赛事直播弹窗
-  updateHideEsportsPopup(store.get('hideEsportsPopup'))
-  store.onChange('hideEsportsPopup', updateHideEsportsPopup)
-
-  // 玩家对战模式可见性勾选条
-  updateGameModeFilter(store.get('gameModeFilter'))
-  store.onChange('gameModeFilter', updateGameModeFilter)
-
-  // 快速大厅模式（点击 Play 直接进目标队列）
-  updateQuickLobbyMode(store.get('quickLobbyMode'))
-  store.onChange('quickLobbyMode', updateQuickLobbyMode)
-
-  // 恢复窗口特效
-  const savedEffect = store.get('windowEffect')
-  if (savedEffect && savedEffect !== 'none') {
-    Effect.apply(savedEffect as 'acrylic', { color: '#0006' })
-    logger.info('Restored window effect: %s', savedEffect)
-  }
-
-  logger.info('Features initialized ✓')
+  logger.info('Ranked analysis features initialized ✓')
 }

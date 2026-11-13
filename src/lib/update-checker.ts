@@ -27,9 +27,9 @@ export interface UpdateState {
   error: string
 }
 
-const RELEASE_PAGE_URL = 'https://com.hytale.net.cn/WJZ-P/sona/releases'
-const GITHUB_API_LATEST = 'https://api.github.com/repos/WJZ-P/sona/releases/latest'
-const GITHUB_API_RELEASES = 'https://api.github.com/repos/WJZ-P/sona/releases'
+const RELEASE_PAGE_URL = 'https://github.com/limnova/sona/releases'
+const GITHUB_API_LATEST = 'https://api.github.com/repos/limnova/sona/releases/latest'
+const GITHUB_API_RELEASES = 'https://api.github.com/repos/limnova/sona/releases'
 
 function wrapCorsProxy(targetUrl: string): string {
   return `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
@@ -114,9 +114,9 @@ async function fetchLatestRelease(): Promise<GithubReleaseResponse> {
       }
 
       const parsed = JSON.parse(text) as unknown
-      const data = kind === 'single'
-        ? (parsed as GithubReleaseResponse)
-        : (Array.isArray(parsed) && parsed[0] ? (parsed[0] as GithubReleaseResponse) : null)
+      let data: GithubReleaseResponse | null = null
+      if (kind === 'single') data = parsed as GithubReleaseResponse
+      else if (Array.isArray(parsed) && parsed[0]) data = parsed[0] as GithubReleaseResponse
 
       if (!data?.tag_name) {
         errors.push(`${url} -> missing tag_name`)

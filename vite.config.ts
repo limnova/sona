@@ -1,14 +1,15 @@
-import { defineConfig, type Plugin, type ResolvedConfig } from 'vite'
+import { defineConfig, type Plugin, type ResolvedConfig, type UserConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import mkcert from 'vite-plugin-mkcert'
 import path from 'node:path'
 import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 // Read plugin config from package.json
-const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf-8'))
+const PROJECT_ROOT = fileURLToPath(new URL('.', import.meta.url))
+const pkg = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf-8'))
 const PLUGIN_NAME: string = pkg.config.pluginName
-const LOADER_PATH: string = pkg.config.loaderPath
-const PLUGINS_DIR = path.resolve(LOADER_PATH, 'plugins', PLUGIN_NAME)
+const LOADER_PATH: string = process.env.PENGU_LOADER_PATH ?? pkg.config.loaderPath
+const PLUGINS_DIR = path.resolve(PROJECT_ROOT, LOADER_PATH, 'plugins', PLUGIN_NAME)
 
 /**
  * Pengu Loader Dev Server Plugin
@@ -83,8 +84,7 @@ function penguServe(): Plugin {
 /**
  * Pengu Loader Build Plugin
  * - Patches asset paths for PenguLoader's plugin protocol
- * - Wraps code for proper load timing
- * - Copies build output to plugins directory
+ * - Installs build output only in explicit install mode
  */
 function penguBuild(): Plugin {
   let config: ResolvedConfig
@@ -97,8 +97,8 @@ function penguBuild(): Plugin {
       config = resolvedConfig
     },
 
-    closeBundle() {
-      const outDir = path.resolve(config.build.outDir)
+    writeBundle() {
+      const outDir = path.resolve(config.root, config.build.outDir)
 
       // Remove index.html (not needed for plugins)
       const htmlPath = path.join(outDir, 'index.html')
@@ -106,7 +106,7 @@ function penguBuild(): Plugin {
         fs.unlinkSync(htmlPath)
       }
 
-      // Process index.js - patch asset paths and wrap in load listener
+      // Process index.js - patch asset paths and import plugin styles
       const jsPath = path.join(outDir, 'index.js')
       if (fs.existsSync(jsPath)) {
         let js = fs.readFileSync(jsPath, 'utf-8')
@@ -123,9 +123,9 @@ function penguBuild(): Plugin {
           '/**',
           ' * @name Sona',
           ` * @version ${pkg.version}`,
-          ' * @description 基于 Pengu Loader 的全服可用英雄联盟客户端增强插件',
+          ' * @description 基于 Pengu Loader 的国服英雄联盟排位分析插件',
           ' * @author WJZ_P',
-          ' * @link https://github.com/WJZ-P/sona',
+          ' * @link https://github.com/limnova/sona',
           ' */',
           '',
         ].join('\n')
@@ -142,20 +142,12 @@ function penguBuild(): Plugin {
         fs.writeFileSync(cssPath, css)
       }
 
-      // Copy build output to plugins directory (skip if it's the project root)
-      const projectRoot = path.resolve(__dirname)
-      if (path.resolve(PLUGINS_DIR) === projectRoot) {
-        // Target is the project itself — just move dist contents to project root
-        copyDirSync(outDir, projectRoot)
-        console.log(`\n  ✅ Plugin "${PLUGIN_NAME}" built in-place (project root)\n`)
-      } else {
-        if (fs.existsSync(PLUGINS_DIR)) {
-          fs.rmSync(PLUGINS_DIR, { recursive: true })
-        }
-        fs.mkdirSync(PLUGINS_DIR, { recursive: true })
-        copyDirSync(outDir, PLUGINS_DIR)
-        console.log(`\n  ✅ Plugin "${PLUGIN_NAME}" built to ${PLUGINS_DIR}\n`)
-      }
+      if (config.mode !== 'install') return
+
+      // Preserve custom assets and other user files in the installed plugin.
+      fs.mkdirSync(PLUGINS_DIR, { recursive: true })
+      copyDirSync(outDir, PLUGINS_DIR)
+      console.log(`\n  ✅ Plugin "${PLUGIN_NAME}" installed to ${PLUGINS_DIR}\n`)
     },
   }
 }
@@ -173,20 +165,20 @@ function copyDirSync(src: string, dest: string) {
   }
 }
 
-export default defineConfig({
+export default defineConfig(async ({ command }): Promise<UserConfig> => ({
   define: {
     __PLUGIN_VERSION__: JSON.stringify(pkg.version),
     'process.env.NODE_ENV': JSON.stringify('production'),
   },
   plugins: [
     react(),
-    mkcert(),
+    command === 'serve' && (await import('vite-plugin-mkcert')).default(),
     penguServe(),
     penguBuild(),
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src'),
+      '@': path.resolve(PROJECT_ROOT, 'src'),
     },
   },
   server: {
@@ -196,8 +188,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    reportCompressedSize: false,
     lib: {
-      entry: path.resolve(__dirname, 'src/index.tsx'),
+      entry: path.resolve(PROJECT_ROOT, 'src/index.tsx'),
       formats: ['es'],
       fileName: () => 'index.js',
     },
@@ -212,4 +205,4 @@ export default defineConfig({
     },
   },
   publicDir: false,
-})
+}))

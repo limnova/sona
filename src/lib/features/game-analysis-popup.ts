@@ -5,6 +5,7 @@ import { lcu, LcuEventUri } from '@/lib/lcu'
 import type { LCUEventMessage, GameflowPhase } from '@/lib/lcu'
 import { injector } from '@/lib/InjectorManager'
 import { GameAnalysisModal } from '@/components/ui/GameAnalysisModal'
+import { isSummonersRiftGameflow } from '@/lib/game-mode'
 
 // ==================== 进入游戏自动弹窗战力分析 ====================
 
@@ -127,15 +128,23 @@ export function updateGameAnalysisPopup(enabled: boolean) {
       const phase = event.data as GameflowPhase
       if (phase === 'InProgress') {
         const requestToken = ++popupRequestToken
-        // 注册内嵌按钮注入
-        if (!gameAnalysisBtnRegistered) {
-          injector.register(tryInjectGameAnalysisButton)
-          gameAnalysisBtnRegistered = true
-        }
         // 查询当前 gameId 避免重连时重复弹窗
         lcu.getGameflowSession()
           .then((session) => {
             if (requestToken !== popupRequestToken || !gameAnalysisPopupUnsub) return
+            if (!isSummonersRiftGameflow(session)) {
+              if (gameAnalysisBtnRegistered) {
+                injector.unregister(tryInjectGameAnalysisButton)
+                gameAnalysisBtnRegistered = false
+              }
+              cleanupGameAnalysisButton()
+              cleanupGameAnalysisModal()
+              return
+            }
+            if (!gameAnalysisBtnRegistered) {
+              injector.register(tryInjectGameAnalysisButton)
+              gameAnalysisBtnRegistered = true
+            }
             const gid = session.gameData?.gameId ?? 0
             if (gid > 0 && gid === dismissedPopupGameId) {
               logger.info('[GameAnalysis] 本局已被用户手动关闭，跳过自动弹窗 → gameId=%d', gid)
@@ -147,12 +156,7 @@ export function updateGameAnalysisPopup(enabled: boolean) {
               showGameAnalysisModal()
             }
           })
-          .catch(() => {
-            if (requestToken !== popupRequestToken || !gameAnalysisPopupUnsub || autoPopupAttempted) return
-            // session 查询失败也尝试弹窗（可能是自定义等特殊情况）
-            autoPopupAttempted = true
-            showGameAnalysisModal()
-          })
+          .catch(() => { /* 无法确认是峡谷对局时不启用分析。 */ })
       } else {
         // 任何非 InProgress 阶段都撤销待处理请求并清理弹窗，避免在 Lobby / None
         // 等阶段残留，或被较晚返回的异步请求重新打开。
