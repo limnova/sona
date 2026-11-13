@@ -39,7 +39,12 @@
 ```powershell
 npm ci
 npx --no-install tsc --noEmit
+npm test
 ```
+
+`npm test` 对源码和测试进行类型检查，再运行战绩请求竞态、分页及配装数据转换和装备集合并的回归测试。测试使用独立的 `vitest.config.ts`，不会加载 Pengu 构建插件或修改安装目录。
+
+配装的数据模型位于 `src/types/build-recommendation.ts`；模式上下文、OP.GG / ARAM.GG 数据适配与装备集逻辑位于 `src/lib/build-recommendation/`，宿主事件和界面控制仍由 `src/lib/features/opgg-build-recommendation.ts` 负责。战绩列表行与分页会话位于 `src/components/ui/match-history/`。
 
 `npm run dev` 和 `npm run build` 会按 `package.json` 的 `config.loaderPath` 写入目标插件目录。**构建会删除重建目标插件目录**，运行前请核对其绝对路径及 `vite.config.ts`，避免覆盖其他安装。默认 `../../` 解析到仓库外。
 
