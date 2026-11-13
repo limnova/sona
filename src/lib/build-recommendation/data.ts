@@ -3,7 +3,7 @@ import { getAllChampions, getAugmentInfo } from '@/lib/assets'
 import { aramggApi, type AramggChampionRecommendation, type AramggChampionStatEntry, type AramggCoreItemBuild, type AramggMayhemAugments } from '@/lib/aramgg-api'
 import { opggApi, type OpggAugmentGroup, type OpggArenaModeChampion, type OpggChampion, type OpggMode, type OpggNormalModeChampion, type OpggPosition, type OpggTier, type OpggItemBuild } from '@/lib/opgg-api'
 import type { BuildRecommendation, RecommendationContext } from '@/types/build-recommendation'
-import { FALLBACK_OPGG_POSITION, resolveOpggMode, isKiwiMode, getModeLabel } from './context'
+import { resolveRecommendationPosition, resolveOpggMode, isKiwiMode, getModeLabel } from './context'
 
 function isArenaChampion(data: OpggChampion): data is OpggArenaModeChampion {
   return 'synergies' in data.data
@@ -23,9 +23,7 @@ export async function loadRecommendation(context: RecommendationContext, tier: O
   if (context.championId <= 0) return null
 
   const mode = resolveOpggMode(context)
-  const position = mode === 'ranked'
-    ? (context.position === 'none' ? FALLBACK_OPGG_POSITION : context.position)
-    : 'none'
+  const position = resolveRecommendationPosition(mode, context.position)
 
   if (isKiwiMode(context)) {
     return loadAramggKiwiRecommendation(context, mode, position, tier)
@@ -160,20 +158,29 @@ function mapAramggCoreItemBuilds(builds: AramggCoreItemBuild[]): OpggItemBuild[]
 }
 
 function mapAramggItems(items: Record<string, AramggChampionStatEntry>): OpggItemBuild[] {
-  return Object.entries(items)
-    .map(([id, item]) => ({
-      ids: [Number(id)].filter((value) => Number.isFinite(value) && value > 0),
-      win: toNumber(item.num_win_games),
-      play: toNumber(item.num_games),
-      pick_rate: toNumber(item.pick_rate),
-      tier: Number(item.tier),
-    }))
-    .filter((item) => item.ids.length > 0)
-    .sort((a, b) => {
-      const tierDiff = (Number.isFinite(a.tier) ? a.tier : 99) - (Number.isFinite(b.tier) ? b.tier : 99)
-      return tierDiff || b.pick_rate - a.pick_rate
+  const rankedBuilds: Array<{ tier: number; build: OpggItemBuild }> = []
+
+  for (const [rawId, stats] of Object.entries(items)) {
+    const itemId = Number(rawId)
+    if (!Number.isFinite(itemId) || itemId <= 0) continue
+
+    const tier = Number(stats.tier)
+    rankedBuilds.push({
+      tier: Number.isFinite(tier) ? tier : 99,
+      build: {
+        ids: [itemId],
+        win: toNumber(stats.num_win_games),
+        play: toNumber(stats.num_games),
+        pick_rate: toNumber(stats.pick_rate),
+      },
     })
-    .map(({ tier: _tier, ...item }) => item)
+  }
+
+  rankedBuilds.sort((left, right) => {
+    const tierDifference = left.tier - right.tier
+    return tierDifference || right.build.pick_rate - left.build.pick_rate
+  })
+  return rankedBuilds.map(({ build }) => build)
 }
 
 function getAugmentRaritySortValue(rarity: number): number {
@@ -274,7 +281,8 @@ function mapAramggAugments(augments: Record<string, AramggChampionStatEntry>, ma
 function getRecommendationMeta(champion: OpggChampion): BuildRecommendation['meta'] {
   const stats = champion.data.summary.average_stats
   const tierData = 'tier_data' in stats ? stats.tier_data : undefined
-  const rank = tierData?.rank && tierData.rank > 0 ? tierData.rank : stats.rank > 0 ? stats.rank : null
+  let rank = stats.rank > 0 ? stats.rank : null
+  if (tierData && tierData.rank > 0) rank = tierData.rank
   const previousRank = tierData?.rank_prev && tierData.rank_prev > 0 ? tierData.rank_prev : null
   const totalRank = getAllChampions().length || null
 
