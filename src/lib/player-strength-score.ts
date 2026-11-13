@@ -1,5 +1,4 @@
 import type { SgpGameSummaryLol, SgpParticipantLol } from '@/types/sgp'
-import { translate } from '@/i18n'
 
 export type SonaStrengthRole =
   | 'TOP'
@@ -132,8 +131,19 @@ const BASE_WEIGHTS: ScoreWeights = {
   farming: 0.06,
 }
 
+const GRADE_LABELS: Record<SonaStrengthGrade, string> = {
+  legendary: '天籁主宰',
+  carry: '核心大腿',
+  strong: '稳定强点',
+  reliable: '可靠队友',
+  balanced: '均衡发挥',
+  unstable: '状态摇摆',
+  risky: '高风险点',
+  critical: '需要照顾',
+}
+
 function getGradeLabel(grade: SonaStrengthGrade): string {
-  return translate(`strength.grade.${grade}` as Parameters<typeof translate>[0])
+  return GRADE_LABELS[grade]
 }
 
 export function calculateSonaPlayerStrengthScore(
@@ -351,18 +361,13 @@ export function getSonaStrengthGrade(score: number): SonaStrengthGrade {
 }
 
 export function getSonaStrengthVerdict(score: number, confidence = 1): string {
-  const prefix = confidence < 0.55 ? translate('strength.lowConfidence') : ''
+  const prefix = confidence < 0.55 ? '样本偏少，暂评' : ''
   const grade = getGradeLabel(getSonaStrengthGrade(score))
   return `${prefix}${grade}`
 }
 
 export function formatSonaStrengthScoreLine(score: SonaPlayerStrengthScore): string {
-  return translate('strength.line', {
-    grade: score.gradeLabel,
-    score: score.score.toFixed(1),
-    winRate: formatPercent(score.winRate),
-    kda: score.averageKda.toFixed(2),
-  })
+  return `${score.gradeLabel} ${score.score.toFixed(1)}分 | 胜率${formatPercent(score.winRate)} | KDA ${score.averageKda.toFixed(2)}`
 }
 
 function inferStrengthRole(game: SgpGameSummaryLol, participant: SgpParticipantLol): SonaStrengthRole {

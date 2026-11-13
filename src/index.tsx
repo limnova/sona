@@ -11,14 +11,9 @@ import { initAssets } from '@/lib/assets'
 import { injector } from '@/lib/InjectorManager'
 import { lcu } from '@/lib/lcu'
 import { initPluginResolver } from '@/lib/plugin-resolver'
-import { installEmberHook } from '@/lib/ember-hook'
-import { registerChromaRules } from '@/lib/features/chroma-unlock'
 import { checkForUpdates } from '@/lib/update-checker'
-import { installAdBlockXhrRules } from '@/lib/xhr'
 import '@/styles/index.css'
 import '@/styles/inject.css'
-import '@/styles/availabilityMenu.css'
-import '@/styles/gameModeFilter.css'
 
 const PLUGIN_NAME = 'Sona'
 const PLUGIN_VERSION = __PLUGIN_VERSION__
@@ -77,12 +72,8 @@ let penguContext: PenguContext | null = null
 export function init(context: PenguContext) {
   penguContext = context
   initPluginResolver(import.meta.url, context)
-  installAdBlockXhrRules()
   lcu.bindContext(context)
 
-  // 必须在 init 阶段注册 RCP hook——要赶在客户端调用 getEmber 之前
-  installEmberHook(context)
-  registerChromaRules()
 
   logger.printBanner()
 }
@@ -94,7 +85,7 @@ export function init(context: PenguContext) {
 export function load() {
   logger.info('Plugin loading...')
   registerAllInjections()  //  注册所有 DOM 注入点并启动守护
-  initFeatures()           //  初始化功能监听（自动接受、解锁签名等）
+  initFeatures()           //  初始化战绩分析与配装推荐
   registerHotkey()         //  注册 F1 快捷键
   initAssets()             //  初始化装备/技能资源映射（异步，不阻塞）
   mountApp()
@@ -153,7 +144,7 @@ function mountApp() {
   }
 
   if (!runtime.hasShownSpecialDayToast && isSpecialDay()) {
-    Toast.success('today is a special day! 🎉')
+    Toast.success('今天是个特别的日子！🎉')
     runtime.hasShownSpecialDayToast = true
   }
 }

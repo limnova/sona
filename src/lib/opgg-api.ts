@@ -1,4 +1,3 @@
-export type OpggRegion = 'global' | 'na' | 'euw' | 'kr' | 'br' | 'eune' | 'jp' | 'lan' | 'las' | 'oce' | 'tr' | 'ru' | 'sg' | 'id' | 'ph' | 'th' | 'vn' | 'tw' | 'me'
 export type OpggMode = 'aram' | 'arena' | 'nexus_blitz' | 'urf' | 'ranked'
 export type OpggTier = 'all' | 'ibsg' | 'iron' | 'bronze' | 'silver' | 'gold' | 'gold_plus' | 'platinum' | 'platinum_plus' | 'emerald' | 'emerald_plus' | 'diamond' | 'diamond_plus' | 'master' | 'master_plus' | 'grandmaster' | 'challenger'
 export type OpggPosition = 'mid' | 'jungle' | 'adc' | 'top' | 'support' | 'all' | 'none'
@@ -304,12 +303,10 @@ export interface OpggRequestOptions {
 }
 
 export interface OpggGetVersionsOptions extends OpggRequestOptions {
-  region: OpggRegion
   mode: OpggMode
 }
 
 export interface OpggGetChampionsTierOptions extends OpggRequestOptions {
-  region: OpggRegion
   mode: OpggMode
   tier: OpggTier
   version?: string
@@ -317,7 +314,6 @@ export interface OpggGetChampionsTierOptions extends OpggRequestOptions {
 
 export interface OpggGetChampionOptions extends OpggRequestOptions {
   id: number
-  region: OpggRegion
   mode: OpggMode
   tier: OpggTier
   position?: OpggPosition
@@ -347,13 +343,13 @@ export class OpggDataApi {
   static readonly DEFAULT_TIMEOUT_MS = 10000
 
   async getVersions(options: OpggGetVersionsOptions): Promise<OpggVersions> {
-    const { region, mode, signal, timeoutMs } = options
-    return this.request(`/api/${region}/champions/${mode}/versions`, { signal, timeoutMs })
+    const { mode, signal, timeoutMs } = options
+    return this.request(`/api/global/champions/${mode}/versions`, { signal, timeoutMs })
   }
 
   async getChampionsTier(options: OpggGetChampionsTierOptions): Promise<OpggChampionsTier> {
-    const { region, mode, tier, version, signal, timeoutMs } = options
-    return this.request(`/api/${region}/champions/${mode}`, {
+    const { mode, tier, version, signal, timeoutMs } = options
+    return this.request(`/api/global/champions/${mode}`, {
       params: { tier, version },
       signal,
       timeoutMs,
@@ -361,11 +357,11 @@ export class OpggDataApi {
   }
 
   async getChampion(options: OpggGetChampionOptions): Promise<OpggChampion> {
-    const { id, region, mode, tier, version, signal, timeoutMs } = options
+    const { id, mode, tier, version, signal, timeoutMs } = options
     const position = mode === 'aram' ? 'none' : options.position
     const path = mode === 'arena'
-      ? `/api/${region}/champions/${mode}/${id}`
-      : `/api/${region}/champions/${mode}/${id}/${position ?? 'none'}`
+      ? `/api/global/champions/${mode}/${id}`
+      : `/api/global/champions/${mode}/${id}/${position ?? 'none'}`
 
     return this.request(path, {
       params: { tier, version },
@@ -403,7 +399,7 @@ export class OpggDataApi {
       const body = parseJson(text)
 
       if (!resp.ok) {
-        throw new OpggApiError(`OP.GG request failed: ${resp.status} ${resp.statusText}`, {
+        throw new OpggApiError(`OP.GG 请求失败： ${resp.status} ${resp.statusText}`, {
           url: url.toString(),
           status: resp.status,
           statusText: resp.statusText,
@@ -415,7 +411,7 @@ export class OpggDataApi {
     } catch (err) {
       if (err instanceof OpggApiError) throw err
       const message = err instanceof Error ? err.message : String(err)
-      throw new OpggApiError(`OP.GG request failed: ${message}`, { url: url.toString() })
+      throw new OpggApiError(`OP.GG 请求失败： ${message}`, { url: url.toString() })
     } finally {
       window.clearTimeout(timeout)
       options.signal?.removeEventListener('abort', relayAbort)

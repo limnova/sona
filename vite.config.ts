@@ -123,9 +123,9 @@ function penguBuild(): Plugin {
           '/**',
           ' * @name Sona',
           ` * @version ${pkg.version}`,
-          ' * @description 基于 Pengu Loader 的全服可用英雄联盟客户端增强插件',
+          ' * @description 基于 Pengu Loader 的国服英雄联盟排位分析插件',
           ' * @author WJZ_P',
-          ' * @link https://github.com/WJZ-P/sona',
+          ' * @link https://github.com/limnova/sona',
           ' */',
           '',
         ].join('\n')

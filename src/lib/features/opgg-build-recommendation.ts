@@ -31,7 +31,6 @@ import {
   type OpggItemBuild,
 } from '@/lib/opgg-api'
 import type { GameflowPhase } from '@/types/lcu'
-import { translate } from '@/i18n'
 
 const TARGET_SELECTOR = '.toggle-ability-previews-button'
 const HIJACK_ATTR = 'data-sona-opgg-build-hijacked'
@@ -207,7 +206,6 @@ function ensureCommonPositionMap(tier: OpggTier): Promise<Map<number, OpggPositi
   if (cached) return cached
 
   const promise = opggApi.getChampionsTier({
-    region: 'global',
     mode: 'ranked',
     tier,
   }).then((summary) => {
@@ -418,9 +416,7 @@ function notifySmartRuneSaved(context: RecommendationContext, runeKey: string, s
 
   const championName = getChampionName(context.championId)
   const modeLabel = getContextModeLabel(context)
-  lcu.sendChampSelectMessage(translate('opgg.chat.runesSaved', { championName, modeLabel }), 'celebration').catch((err) => {
-    logger.warn('[OPGG] 智能符文保存聊天提示发送失败:', err)
-  })
+  Toast.success(`${championName} ${modeLabel} 符文更改已保存 - Sona`)
 }
 
 function rememberSmartRuneSnapshot(runeKey: string, page: SmartRuneSnapshot): void {
@@ -1094,9 +1090,7 @@ async function upsertRecommendedItemSet(context: RecommendationContext, recommen
     plan.removedDuplicates,
   )
   const championName = getChampionName(context.championId)
-  lcu.sendChampSelectMessage(translate('opgg.chat.buildReady', { championName }), 'celebration').catch((err) => {
-    logger.warn('[OPGG] 自动装备集聊天提示发送失败:', err)
-  })
+  Toast.success(`${championName} 出装已配备 - Sona`)
 }
 
 /** 批量写入多条分路的 Sona 装备集（读一次、过滤一次、一次写回，避免多次读写竞态） */
@@ -1136,9 +1130,7 @@ async function upsertRecommendedItemSets(
   )
 
   const championName = getChampionName(items[0].context.championId)
-  lcu.sendChampSelectMessage(translate('opgg.chat.buildReady', { championName }), 'celebration').catch((err) => {
-    logger.warn('[OPGG] 多分路自动装备集聊天提示发送失败:', err)
-  })
+  Toast.success(`${championName} 出装已配备 - Sona`)
 }
 
 /** 匹配/排位识别不到分路时：并发拉取上中打野下路辅助五路，分别写入各自的装备集 */
@@ -1286,12 +1278,10 @@ async function applySavedSmartLoadout(context: RecommendationContext): Promise<v
   const championName = getChampionName(context.championId)
   const modeLabel = getContextModeLabel(context)
   const restoredText = runeRestored && spellsRestored
-    ? translate('opgg.restored.runesAndSpells')
-    : runeRestored ? translate('opgg.restored.runes') : translate('opgg.restored.spells')
+    ? '符文 & 召唤师技能'
+    : runeRestored ? '符文' : '召唤师技能'
 
-  lcu.sendChampSelectMessage(translate('opgg.chat.restored', { championName, modeLabel, restoredText }), 'celebration').catch((err) => {
-    logger.warn('[OPGG] 智能配置聊天提示发送失败:', err)
-  })
+  Toast.success(`${championName} ${modeLabel} ${restoredText}已恢复 - Sona`)
 }
 
 function syncSavedSmartLoadoutWhenReady(context: RecommendationContext): void {
@@ -1704,11 +1694,11 @@ async function getChampionWithVersionFallback(options: {
   version?: string
 }): Promise<OpggChampion> {
   try {
-    return await opggApi.getChampion({ ...options, region: 'global' })
+    return await opggApi.getChampion(options)
   } catch (err) {
     if (!options.version) throw err
     logger.warn('[OPGG] 版本 %s 请求失败，回退到 OP.GG 最新版本:', options.version, err)
-    return opggApi.getChampion({ ...options, region: 'global', version: undefined })
+    return opggApi.getChampion({ ...options, version: undefined })
   }
 }
 

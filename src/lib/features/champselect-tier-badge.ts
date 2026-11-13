@@ -197,7 +197,7 @@ function ensureTierMap(mode: TierDataMode, tier = getEffectiveTier(mode)): Promi
   const source = mode === 'kiwi' ? 'ARAM.GG' : 'OP.GG'
   entry.promise = (mode === 'kiwi'
     ? aramggApi.getChampionsStats().then(buildAramggTierMap)
-    : opggApi.getChampionsTier({ region: 'global', mode, tier }).then((data) => buildTierMap(data, mode)))
+    : opggApi.getChampionsTier({ mode, tier }).then((data) => buildTierMap(data, mode)))
     .then((tierMap) => {
       entry.data = tierMap
       entry.promise = undefined

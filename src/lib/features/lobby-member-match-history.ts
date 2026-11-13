@@ -282,7 +282,7 @@ function renderStatsOverlay(identity: HTMLElement, stats: LobbyMemberStats | und
   const nextText = stats
     ? [
         `胜率 ${Math.round(stats.winRate * 100)}%`,
-        `KDA ${stats.kda >= 99 ? 'Perfect' : stats.kda.toFixed(2)}`,
+        `KDA ${stats.kda >= 99 ? '完美' : stats.kda.toFixed(2)}`,
         `评分 ${stats.score != null ? stats.score.toFixed(1) : '--'}`,
       ].join('|')
     : '战绩加载中...'
@@ -300,7 +300,7 @@ function renderStatsOverlay(identity: HTMLElement, stats: LobbyMemberStats | und
   overlay.innerHTML = [
     `<span style="color:${getRateColor(stats.winRate)}">胜率 ${Math.round(stats.winRate * 100)}%</span>`,
     `<span style="color:#5c5b57">|</span>`,
-    `<span style="color:${getKdaColor(stats.kda)}">KDA ${stats.kda >= 99 ? 'Perfect' : stats.kda.toFixed(2)}</span>`,
+    `<span style="color:${getKdaColor(stats.kda)}">KDA ${stats.kda >= 99 ? '完美' : stats.kda.toFixed(2)}</span>`,
     `<span style="color:#5c5b57">|</span>`,
     `<span style="color:${stats.score != null ? getScoreColor(stats.score) : '#a09b8c'}">评分 ${stats.score != null ? stats.score.toFixed(1) : '--'}</span>`,
   ].join('')

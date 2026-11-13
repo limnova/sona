@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react'
 import { SonaButton } from '@/components/ui/SonaButton'
 import { checkForUpdates, getReleasePageUrl, getUpdateState, onUpdateStateChange, skipUpdateVersion, type UpdateState } from '@/lib/update-checker'
-import { useI18n } from '@/i18n'
 import '@/styles/UpdatePage.css'
-
-const GROUP_FILE_URL = ''
-const QUARK_URL = 'https://pan.quark.cn/s/72e3caf2e3d9'
 
 function formatPublishedDate(value: string): string {
   const date = new Date(value)
@@ -18,7 +14,6 @@ function formatPublishedDate(value: string): string {
 }
 
 export function UpdatePage() {
-  const { t } = useI18n()
   const [updateState, setUpdateState] = useState<UpdateState>(() => getUpdateState())
   const info = updateState.info
 
@@ -34,13 +29,13 @@ export function UpdatePage() {
       <h2 className="sona-update-title">
         {info ? (
           <>
-            {t('update.titleWithVersion')}
+            {'检测到Sona新版本：'}
             <span className="sona-update-title-version">{info.currentVersion}</span>
             <span className="sona-update-title-arrow">→</span>
             <span className="sona-update-title-version sona-update-title-version--latest">{info.latestVersion}</span>
           </>
         ) : (
-          t('update.title')
+          '检测到Sona新版本'
         )}
       </h2>
 
@@ -55,29 +50,23 @@ export function UpdatePage() {
           </div>
 
           <div className="sona-update-download">
-            <h3>{t('update.downloadTitle')}</h3>
-            <p>{t('update.downloadDescription')}</p>
+            <h3>{'下载方式'}</h3>
+            <p>{'请到 limnova/sona 的 Releases 页面下载此精简版。'}</p>
             <div className="sona-update-actions">
               <SonaButton variant="primary" onClick={() => openUrl(info.releaseUrl || getReleasePageUrl())}>
-                {t('update.openRelease')}
-              </SonaButton>
-              <SonaButton onClick={() => openUrl(GROUP_FILE_URL)} disabled={!GROUP_FILE_URL}>
-                {t('update.groupFile')}
-              </SonaButton>
-              <SonaButton onClick={() => openUrl(QUARK_URL)} disabled={!QUARK_URL}>
-                {t('update.quark')}
+                {'打开 Release'}
               </SonaButton>
               <SonaButton onClick={() => skipUpdateVersion(info.latestVersion)}>
-                {t('update.skipVersion', { version: info.latestVersion })}
+                {`跳过 v${info.latestVersion}`}
               </SonaButton>
             </div>
           </div>
         </>
       ) : (
         <div className="sona-update-empty">
-          <p>{updateState.status === 'checking' ? t('update.checking') : updateState.status === 'error' ? t('update.checkFailed', { error: updateState.error ?? '' }) : t('update.none')}</p>
+          <p>{updateState.status === 'checking' ? '正在检查更新...' : updateState.status === 'error' ? `检查更新失败：${updateState.error ?? ''}` : '当前没有检测到新版本。'}</p>
           <SonaButton onClick={() => { void checkForUpdates() }}>
-            {t('update.recheck')}
+            {'重新检查'}
           </SonaButton>
         </div>
       )}
