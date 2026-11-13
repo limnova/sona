@@ -263,7 +263,10 @@ function TrendMeta({ meta }: { meta?: RecommendationMeta }) {
   if (!meta) return null
 
   const trend = getRankTrend(meta.rankDelta)
-  const rankText = meta.rank && meta.totalRank ? `${meta.rank}/${meta.totalRank}` : meta.rank ? `#${meta.rank}` : ''
+  let rankText = ''
+  if (meta.rank) {
+    rankText = meta.totalRank ? `${meta.rank}/${meta.totalRank}` : `#${meta.rank}`
+  }
   if (trend.kind === 'unknown' && rankText) {
     return (
       <div className="sobp-meta">
@@ -534,6 +537,10 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
         const applyKey = `${index}-${rune.id}`
         const keystoneId = rune.primary_rune_ids[0] ?? 0
         const keystone = getPerkInfo(keystoneId)
+        let applyLabel = '应用'
+        if (applyingKey === applyKey) applyLabel = '应用中'
+        else if (appliedKey === applyKey) applyLabel = '已应用'
+        else if (applyErrorKey === applyKey) applyLabel = '失败'
         return (
           <div className="sobp-row" key={`${index}-${rune.primary_rune_ids.join('-')}-${rune.secondary_rune_ids.join('-')}`}>
             <div className="sobp-row-main">
@@ -569,7 +576,7 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
                   void applyRune(rune, index)
                 }}
               >
-                {applyingKey === applyKey ? '应用中' : appliedKey === applyKey ? '已应用' : applyErrorKey === applyKey ? '失败' : '应用'}
+                {applyLabel}
               </button>
             </div>
           </div>

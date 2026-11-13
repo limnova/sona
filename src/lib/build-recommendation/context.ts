@@ -17,6 +17,12 @@ export function isKiwiMode(context: RecommendationContext): boolean {
   return context.gameMode.toLowerCase() === 'kiwi'
 }
 
+export function resolveRecommendationPosition(mode: OpggMode, position: OpggPosition): OpggPosition {
+  if (mode !== 'ranked') return 'none'
+  if (position === 'none') return FALLBACK_OPGG_POSITION
+  return position
+}
+
 export function getChampionName(championId: number): string {
   const champion = getChampionById(championId)
   if (!champion) return `英雄 ${championId}`

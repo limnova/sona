@@ -420,7 +420,9 @@ function tryInjectPlayerIconTierBadges() {
 }
 
 function getSelectedChampionId(player: ChampSelectSession['myTeam'][number]): number {
-  return player.championId > 0 ? player.championId : player.championPickIntent > 0 ? player.championPickIntent : 0
+  if (player.championId > 0) return player.championId
+  if (player.championPickIntent > 0) return player.championPickIntent
+  return 0
 }
 
 function cleanupBadges() {

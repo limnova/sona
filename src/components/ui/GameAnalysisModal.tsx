@@ -507,15 +507,19 @@ function renderKdaValue(val: number, isMax: boolean) {
   return isMax ? <span style={{ color: '#ff4444' }}>{text}</span> : text
 }
 
+function getWinRateColor(winRate: number | null): string | null {
+  if (winRate == null) return null
+  if (winRate >= 70) return '#e8a424'
+  if (winRate >= 50) return '#5bbd72'
+  if (winRate >= 30) return '#e84057'
+  return '#9b59b6'
+}
+
 function PlayerRow({ player, isRed, queueId }: { player: PlayerAnalysis; isRed: boolean; queueId?: number }) {
   const winRate = player.winRate
-  // 胜率颜色
-  const winColor = winRate != null
-    ? (winRate >= 70 ? '#e8a424' : winRate >= 50 ? '#5bbd72' : winRate >= 30 ? '#e84057' : '#9b59b6')
-    : '#5c5b57'
-  const barColor = winRate != null
-    ? (winRate >= 70 ? '#e8a424' : winRate >= 50 ? '#5bbd72' : winRate >= 30 ? '#e84057' : '#9b59b6')
-    : '#3c2e16'
+  const winRateColor = getWinRateColor(winRate)
+  const winColor = winRateColor ?? '#5c5b57'
+  const barColor = winRateColor ?? '#3c2e16'
   const kdaStr = player.kdaNum >= 99 ? '完美' : player.kdaNum.toFixed(1)
   const kdaColor = player.kdaNum >= 3 ? '#5bbd72' : '#e74c3c'
 

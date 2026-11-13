@@ -632,7 +632,9 @@ function tryInjectChampSelectTier(): boolean {
         if (summonerContainer) summonerContainer.style.overflow = 'visible'
 
         const kdaStr = stat.kdaNum >= 99 ? '完美' : stat.kdaNum.toFixed(1)
-        const winColor = winRate >= 55 ? '#5bbd72' : winRate >= 45 ? '#c8aa6e' : '#e74c3c'
+        let winColor = '#e74c3c'
+        if (winRate >= 55) winColor = '#5bbd72'
+        else if (winRate >= 45) winColor = '#c8aa6e'
 
         const statsDiv = document.createElement('div')
         statsDiv.setAttribute(SONA_STATS_ATTR, 'true')
@@ -642,7 +644,9 @@ function tryInjectChampSelectTier(): boolean {
         winSpan.style.cssText = `color:${winColor};font-weight:bold;display:inline-block;min-width:90px;`
         winSpan.textContent = `${winRate.toFixed(0)}% (${stat.wins}胜/${stat.total - stat.wins}负)`
 
-        const kdaColor = stat.kdaNum >= 5 ? '#5bbd72' : stat.kdaNum >= 3 ? '#c8aa6e' : '#e74c3c'
+        let kdaColor = '#e74c3c'
+        if (stat.kdaNum >= 5) kdaColor = '#5bbd72'
+        else if (stat.kdaNum >= 3) kdaColor = '#c8aa6e'
         const kdaSpan = document.createElement('span')
         kdaSpan.style.cssText = `color:${kdaColor};margin-left:8px;font-weight:bold;text-shadow:0 0 4px rgba(200,170,110,0.6);`
         kdaSpan.textContent = `KDA ${kdaStr}`

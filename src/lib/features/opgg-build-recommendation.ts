@@ -25,7 +25,7 @@ import {
 } from '@/lib/opgg-api'
 import type { GameflowPhase } from '@/types/lcu'
 import type { BuildRecommendation, RecommendationContext } from '@/types/build-recommendation'
-import { FALLBACK_OPGG_POSITION, getChampionName, getPositionLabel, getModeLabel, isKiwiMode, resolveOpggMode } from '@/lib/build-recommendation/context'
+import { FALLBACK_OPGG_POSITION, getChampionName, getPositionLabel, getModeLabel, isKiwiMode, resolveOpggMode, resolveRecommendationPosition } from '@/lib/build-recommendation/context'
 import { loadRecommendation } from '@/lib/build-recommendation/data'
 import { createManagedItemSet, getManagedItemSetUid, planManagedItemSetUpsert } from '@/lib/build-recommendation/item-sets'
 
@@ -294,9 +294,7 @@ function shouldExpandAllPositions(context: RecommendationContext): boolean {
 
 function getRecommendationCacheKey(context: RecommendationContext): string {
   const mode = resolveOpggMode(context)
-  const position = mode === 'ranked'
-    ? (context.position === 'none' ? FALLBACK_OPGG_POSITION : context.position)
-    : 'none'
+  const position = resolveRecommendationPosition(mode, context.position)
   const tier = getEffectiveOpggTier(context)
 
   return [
@@ -962,9 +960,8 @@ async function applySavedSmartLoadout(context: RecommendationContext): Promise<v
 
   const championName = getChampionName(context.championId)
   const modeLabel = getContextModeLabel(context)
-  const restoredText = runeRestored && spellsRestored
-    ? '符文 & 召唤师技能'
-    : runeRestored ? '符文' : '召唤师技能'
+  let restoredText = runeRestored ? '符文' : '召唤师技能'
+  if (runeRestored && spellsRestored) restoredText = '符文 & 召唤师技能'
 
   Toast.success(`${championName} ${modeLabel} ${restoredText}已恢复 - Sona`)
 }

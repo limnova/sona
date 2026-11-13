@@ -114,9 +114,9 @@ async function fetchLatestRelease(): Promise<GithubReleaseResponse> {
       }
 
       const parsed = JSON.parse(text) as unknown
-      const data = kind === 'single'
-        ? (parsed as GithubReleaseResponse)
-        : (Array.isArray(parsed) && parsed[0] ? (parsed[0] as GithubReleaseResponse) : null)
+      let data: GithubReleaseResponse | null = null
+      if (kind === 'single') data = parsed as GithubReleaseResponse
+      else if (Array.isArray(parsed) && parsed[0]) data = parsed[0] as GithubReleaseResponse
 
       if (!data?.tag_name) {
         errors.push(`${url} -> missing tag_name`)

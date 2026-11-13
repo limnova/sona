@@ -220,9 +220,9 @@ function buildStatsHtml(stats: ChampionBalanceStats): string {
     const icon = ICON_MAP[key]
     const color = isBuff(key, value) ? '#5bbd72' : '#e84749'
     // ability_haste 按加数显示（+N），其他按倍率显示（+N%）
-    const text = isAbilityHasteField(key)
-      ? (value >= 0 ? `+${value}` : `${value}`)
-      : ratioToText(value)
+    let text: string
+    if (isAbilityHasteField(key)) text = value >= 0 ? `+${value}` : `${value}`
+    else text = ratioToText(value)
     const iconHtml = icon
       ? `<img src="${icon}" width="14" height="14" alt="" style="margin-right:6px;vertical-align:middle;" />`
       : ''

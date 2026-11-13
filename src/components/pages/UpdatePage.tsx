@@ -13,6 +13,12 @@ function formatPublishedDate(value: string): string {
   return `${year}年${month}月${day}日`
 }
 
+function getEmptyStateMessage(state: UpdateState): string {
+  if (state.status === 'checking') return '正在检查更新...'
+  if (state.status === 'error') return `检查更新失败：${state.error ?? ''}`
+  return '当前没有检测到新版本。'
+}
+
 export function UpdatePage() {
   const [updateState, setUpdateState] = useState<UpdateState>(() => getUpdateState())
   const info = updateState.info
@@ -64,7 +70,7 @@ export function UpdatePage() {
         </>
       ) : (
         <div className="sona-update-empty">
-          <p>{updateState.status === 'checking' ? '正在检查更新...' : updateState.status === 'error' ? `检查更新失败：${updateState.error ?? ''}` : '当前没有检测到新版本。'}</p>
+          <p>{getEmptyStateMessage(updateState)}</p>
           <SonaButton onClick={() => { void checkForUpdates() }}>
             {'重新检查'}
           </SonaButton>

@@ -416,7 +416,9 @@ function calculateDamageScore(
   minutes: number,
   damageShare: number,
 ): number {
-  const excellentShare = role === 'UTILITY' ? 0.2 : role === 'ARAM' ? 0.26 : 0.29
+  let excellentShare = 0.29
+  if (role === 'UTILITY') excellentShare = 0.2
+  else if (role === 'ARAM') excellentShare = 0.26
   const shareScore = scoreRange(damageShare, role === 'UTILITY' ? 0.06 : 0.1, excellentShare)
   const damagePerMinute = getChallengeNumber(participant, 'damagePerMinute') ||
     safeDivide(participant.totalDamageDealtToChampions, minutes)
@@ -473,7 +475,9 @@ function calculateObjectiveScore(
     getChallengeNumber(participant, 'dragonTakedowns') +
     getChallengeNumber(participant, 'baronTakedowns')
   const turretTakedowns = getChallengeNumber(participant, 'turretTakedowns') || participant.turretTakedowns
-  const objectiveTarget = role === 'JUNGLE' ? 360 : role === 'BOTTOM' ? 290 : 230
+  let objectiveTarget = 230
+  if (role === 'JUNGLE') objectiveTarget = 360
+  else if (role === 'BOTTOM') objectiveTarget = 290
 
   const objectiveDamageScore = scoreRange(objectiveDamagePerMinute, 20, objectiveTarget)
   const objectiveShareScore = scoreRange(objectiveShare, 0.08, role === 'JUNGLE' ? 0.45 : 0.32)
