@@ -21,6 +21,7 @@
 ## 开发技能
 
 - 写代码、审查或重构前，按任务使用 [.agents/skills/karpathy-guidelines/SKILL.md](.agents/skills/karpathy-guidelines/SKILL.md)：先理解现有实现，明确可验证的目标，保持改动聚焦，减少不必要的抽象。
+- 整理条件分支、数据转换、命名和业务规则复用时，使用 [.agents/skills/code-readability/SKILL.md](.agents/skills/code-readability/SKILL.md)。避免嵌套或连续三元表达式，保留简单的单层选择；可读性重构保持既有默认值、阈值与副作用。
 - React 性能、请求等待、事件监听、重渲染和包体积问题，使用 [.agents/skills/vercel-react-best-practices/SKILL.md](.agents/skills/vercel-react-best-practices/SKILL.md)。只加载与当前问题相关的规则。
 - 拆分大型 React 组件、整理状态归属或设计组件接口时，使用 [.agents/skills/vercel-composition-patterns/SKILL.md](.agents/skills/vercel-composition-patterns/SKILL.md)。按实际复杂度选择组合方式，避免为单一用途引入通用框架。
 - Vite 配置、插件生命周期、资源加载或库模式打包问题，使用 [.agents/skills/vite/SKILL.md](.agents/skills/vite/SKILL.md)。
@@ -34,6 +35,6 @@
 ## 验证与构建
 
 - 仅修改技能或文档时，检查内容、引用路径和 diff 即可，不为此安装前端依赖或启动 LOL。
-- 修改源码后运行适用的类型检查；有现成依赖时可运行 `npx --no-install tsc --noEmit`。目前项目没有配置测试或 lint 脚本，不声称这些检查已通过。
+- 修改源码后运行适用的类型检查；有现成依赖时可运行 `npx --no-install tsc --noEmit`。`npm test` 会检查源码和测试的类型，并通过独立 Vitest 配置运行回归测试；目前没有配置 lint 脚本，不声称 lint 已通过。
 - 运行 `npm run build` 前检查 `package.json` 的 `config.loaderPath` 和 `vite.config.ts`：现有构建插件会复制产物，并可能删除重建目标插件目录。先确认解析后的绝对路径在预期位置，避免覆盖用户安装或仓库外目录。
 - 沿用原项目许可与署名；第三方技能的来源、固定版本和许可见 [.agents/skills/README.md](.agents/skills/README.md)。
