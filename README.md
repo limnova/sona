@@ -41,7 +41,7 @@ npm ci
 npx --no-install tsc --noEmit
 ```
 
-`npm run dev` 和 `npm run build` 会按 `package.json` 的 `config.loaderPath` 写入目标插件目录。**构建会删除重建目标插件目录**，运行前请核对其绝对路径及 `vite.config.ts`，避免覆盖其他安装。默认 `../../` 解析到仓库外；本轮验证使用临时配置将目标明确限定在当前仓库，并同步根目录成品。
+`npm run dev` 和 `npm run build` 会按 `package.json` 的 `config.loaderPath` 写入目标插件目录。**构建会删除重建目标插件目录**，运行前请核对其绝对路径及 `vite.config.ts`，避免覆盖其他安装。默认 `../../` 解析到仓库外。
 
 战绩优先走 SGP，失败时回退客户端原生接口；接口、网络或区服状态可能导致无数据。`/lol-chat/v1/me` 仅以 GET 读取区服标识，供战绩路由使用。配装依赖 OP.GG、ARAM.GG 等外部数据源；OP.GG 全球统计仅用于英雄配装参考。
 
