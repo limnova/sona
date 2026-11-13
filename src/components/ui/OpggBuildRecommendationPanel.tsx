@@ -21,7 +21,8 @@ import {
   getSpellName,
 } from '@/lib/assets'
 import { lcu } from '@/lib/lcu'
-import { type OpggItemBuild, type OpggMode, type OpggPosition, type OpggRuneBuild, type OpggTier } from '@/lib/opgg-api'
+import { type OpggItemBuild, type OpggPosition, type OpggRuneBuild, type OpggTier } from '@/lib/opgg-api'
+import type { BuildRecommendation, RecommendationContext, RecommendationMeta } from '@/types/build-recommendation'
 import '@/styles/OpggBuildRecommendationPanel.css'
 
 const MAX_RECOMMENDATION_ROWS = 5
@@ -53,52 +54,6 @@ const OPGG_POSITION_VALUES: OpggPosition[] = ['top', 'jungle', 'mid', 'adc', 'su
 function getOpggTierIcon(tier: OpggTier): string {
   if (tier === 'all' || tier === 'ibsg') return ''
   return `${RANKED_MINI_CREST_BASE}/${tier.replace('_plus', '')}.svg`
-}
-
-export interface RecommendationContext {
-  championId: number
-  queueId: number
-  gameVersion: string
-  gameMode: string
-  position: OpggPosition
-}
-
-export interface BuildRecommendation {
-  mode: OpggMode
-  modeLabel: string
-  version: string
-  position: OpggPosition
-  summary: string[]
-  summonerSpells: OpggItemBuild[]
-  starterItems: OpggItemBuild[]
-  boots: OpggItemBuild[]
-  coreItems: OpggItemBuild[]
-  prismItems: OpggItemBuild[]
-  lastItems: OpggItemBuild[]
-  runePages: OpggRuneBuild[]
-  matchups: Array<{
-    championId: number
-    play: number
-    win: number
-    winRate: number
-  }>
-  augments: Array<{
-    rarity: number
-    label?: string
-    items: Array<{ id: number; pickRate: number; averagePlace?: number; firstPlace?: number; winRate?: number }>
-  }>
-  meta?: RecommendationMeta
-  warning?: string
-}
-
-export interface RecommendationMeta {
-  rank: number | null
-  previousRank: number | null
-  rankDelta: number | null
-  totalRank: number | null
-  matchCount: number | null
-  version: string
-  updatedAt: string
 }
 
 export interface OpggBuildRecommendationPanelProps {
