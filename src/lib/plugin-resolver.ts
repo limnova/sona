@@ -31,7 +31,7 @@ function extractPluginBaseUrl(value: string): string | null {
 function extractPluginFolderName(baseUrl: string): string | null {
   const normalized = normalizePath(baseUrl).replace(/\/+$/, '')
   const parts = normalized.split('/')
-  const folder = parts.at(-1)
+  const folder = parts[parts.length - 1]
   return folder ? decodeURIComponent(folder) : null
 }
 
