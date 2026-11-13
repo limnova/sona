@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { Modal } from '@/components/ui/Modal'
 import { MatchHistoryModal } from '@/components/ui/MatchHistoryModal'
 import { lcu, queueIdToTag } from '@/lib/lcu'
+import { isSummonersRiftGameflow } from '@/lib/game-mode'
 import { store } from '@/lib/store'
 import { getChampIcon } from '@/lib/assets'
 import { getRating } from '@/lib/features'
@@ -63,7 +64,6 @@ interface PlayerAnalysis {
 
 interface GameInfo {
   queueName: string
-  gameMode: string
   mapName: string
   isBlueTeam: boolean
   queueId: number
@@ -168,6 +168,7 @@ export function GameAnalysisModal({ open, onClose, mockData }: GameAnalysisModal
     try {
       const session = await withTimeout(lcu.getGameflowSession(), LCU_TIMEOUT_MS, 'getGameflowSession')
       if (loadToken !== loadTokenRef.current) return
+      if (!isSummonersRiftGameflow(session)) throw new Error('仅支持召唤师峡谷对局')
       const teamOne = session.gameData.teamOne ?? []
       const teamTwo = session.gameData.teamTwo ?? []
       const selections = session.gameData.playerChampionSelections ?? []
@@ -175,7 +176,7 @@ export function GameAnalysisModal({ open, onClose, mockData }: GameAnalysisModal
       // playerChampionSelections 是 puuid 的权威来源，始终包含所有 10 人
       // 索引 0-4 = teamOne（蓝方），5-9 = teamTwo（红方）
       // 主播模式玩家会从 teamOne/teamTwo 中消失，但 selections 中依然保留
-      const teamSize = Math.ceil(selections.length / 2) || 5
+      const teamSize = 5
       const selTeamOne = selections.slice(0, teamSize)
       const selTeamTwo = selections.slice(teamSize)
 
@@ -193,7 +194,6 @@ export function GameAnalysisModal({ open, onClose, mockData }: GameAnalysisModal
 
       setGameInfo({
         queueName: session.gameData.queue.name,
-        gameMode: session.gameData.queue.gameMode,
         mapName: session.map.name,
         isBlueTeam: isInTeamOne,
         queueId: session.gameData.queue.id,

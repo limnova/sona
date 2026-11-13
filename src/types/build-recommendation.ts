@@ -1,16 +1,15 @@
-import type { OpggItemBuild, OpggMode, OpggPosition, OpggRuneBuild } from '@/lib/opgg-api'
+import type { OpggItemBuild, OpggPosition, OpggRuneBuild } from '@/lib/opgg-api'
 
 export interface RecommendationContext {
   championId: number
   queueId: number
   gameVersion: string
   gameMode: string
+  mapId?: number
   position: OpggPosition
 }
 
 export interface BuildRecommendation {
-  mode: OpggMode
-  modeLabel: string
   version: string
   position: OpggPosition
   summary: string[]
@@ -18,7 +17,6 @@ export interface BuildRecommendation {
   starterItems: OpggItemBuild[]
   boots: OpggItemBuild[]
   coreItems: OpggItemBuild[]
-  prismItems: OpggItemBuild[]
   lastItems: OpggItemBuild[]
   runePages: OpggRuneBuild[]
   matchups: Array<{
@@ -26,11 +24,6 @@ export interface BuildRecommendation {
     play: number
     win: number
     winRate: number
-  }>
-  augments: Array<{
-    rarity: number
-    label?: string
-    items: Array<{ id: number; pickRate: number; averagePlace?: number; firstPlace?: number; winRate?: number }>
   }>
   meta?: RecommendationMeta
   warning?: string

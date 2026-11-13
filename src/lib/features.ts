@@ -10,7 +10,7 @@ import { store } from '@/lib/store'
 import { lcu, LcuEventUri, queueIdToTag } from '@/lib/lcu'
 import type { LCUEventMessage, GameflowPhase, ChampSelectSession } from '@/lib/lcu'
 import { injector } from '@/lib/InjectorManager'
-import { updateBalanceBuffTooltip } from '@/lib/features/balance-buff-viewer'
+import { isSummonersRiftChampSelect } from '@/lib/game-context'
 import { updateLobbyMemberMatchHistory } from '@/lib/features/lobby-member-match-history'
 import { updateGameAnalysisPopup } from '@/lib/features/game-analysis-popup'
 import { updateOpggBuildRecommendation } from '@/lib/features/opgg-build-recommendation'
@@ -84,6 +84,7 @@ function resolveChampSelectPuuid(player: ChampSelectTeamPlayer): string {
  */
 async function fetchTeamStats(): Promise<TeamStatsResult> {
   const session = await lcu.getChampSelectSession()
+  if (!await isSummonersRiftChampSelect(session)) return { queueId: session.queueId, stats: [] }
 
   // 直接从 ChampSelectSession 拿 queueId，无需额外请求
   const currentQueueId = session.queueId
@@ -123,7 +124,7 @@ async function fetchTeamStats(): Promise<TeamStatsResult> {
     strengthScore: null,
   })
 
-  // 跳过查不到数据的占位玩家（斗魂模式 myTeam 含空位），其余保留占位以对齐楼层索引
+  // 跳过查不到身份数据的占位玩家，其余保留占位以对齐楼层索引。
   const analyzablePlayers = getAnalyzableTeamPlayers(session)
   const hiddenPlayers = analyzablePlayers.filter((player) => player.nameVisibilityType === 'HIDDEN' && !player.puuid)
   if (hiddenPlayers.length > 0) {
@@ -478,8 +479,6 @@ function applyHiddenPlayerName(wrapper: Element, stat: TeammateStats, playerKey:
 
 /**
  * 过滤掉查不到数据的占位玩家：puuid 与 obfuscatedPuuid 均为空字符串。
- * 斗魂（Arena）模式所有玩家都在 myTeam（16 人）且夹杂空位占位，
- * 跳过它们避免楼层错位与无意义展示。
  */
 function getAnalyzableTeamPlayers(session: ChampSelectSession): ChampSelectTeamPlayer[] {
   return session.myTeam.filter((player) => Boolean(player.puuid) || Boolean(player.obfuscatedPuuid))
@@ -726,8 +725,10 @@ async function applyChampSelectIconEffects() {
 
     const { stats, queueId } = await fetchTeamStats()
     if (requestId !== champSelectStatsRequestId) return
+    if (stats.length === 0) return
     const session = await lcu.getChampSelectSession()
     if (requestId !== champSelectStatsRequestId || session.queueId !== queueId) return
+    if (!await isSummonersRiftChampSelect(session) || requestId !== champSelectStatsRequestId) return
     currentChampSelectQueueId = queueId
     // 建立 puuid → stats 映射，换楼后可用新 myTeam 顺序重建 floorStats
     statsByPuuid.clear()
@@ -772,6 +773,11 @@ function onChampSelectUpdate(event: LCUEventMessage) {
 
   const session = event.data as ChampSelectSession
   if (!session?.myTeam) return
+  if (session.queueId !== currentChampSelectQueueId) {
+    unregisterTierInjection()
+    void applyChampSelectIconEffects()
+    return
+  }
 
   const nextSignature = getTeamDisplaySignature(session)
   if (nextSignature === currentChampSelectTeamSignature) return
@@ -923,9 +929,6 @@ export function initFeatures() {
 
   updateLobbyMemberMatchHistory(store.get('lobbyEnhancement'))
   store.onChange('lobbyEnhancement', updateLobbyMemberMatchHistory)
-
-  updateBalanceBuffTooltip(store.get('balanceBuffTooltip'))
-  store.onChange('balanceBuffTooltip', updateBalanceBuffTooltip)
 
   updateGameAnalysisPopup(store.get('gameAnalysisPopup'))
   store.onChange('gameAnalysisPopup', updateGameAnalysisPopup)

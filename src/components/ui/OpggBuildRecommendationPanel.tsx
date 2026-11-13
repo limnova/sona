@@ -7,7 +7,6 @@ import tier3Icon from '@/../assets/tier/t3.svg'
 import tier4Icon from '@/../assets/tier/t4.svg'
 import tier5Icon from '@/../assets/tier/t5.svg'
 import {
-  getAugmentInfo,
   getChampionById,
   getItemInfo,
   getPerkIcon,
@@ -115,11 +114,9 @@ export function OpggBuildRecommendationPanel({
 }: OpggBuildRecommendationPanelProps) {
   const champion = getChampionById(context.championId)
   const championName = champion ? `${champion.title} ${champion.name}` : '未识别英雄'
-  const queueText = recommendation?.modeLabel || (context.queueId > 0 ? getQueueName(context.queueId) : '未知队列')
+  const queueText = getQueueName(context.queueId)
   const positionText = recommendation?.position ?? context.position
   const modeTags = [queueText, formatPositionText(positionText)].filter(Boolean).join(' · ')
-  const showAugments = isKiwiMode(context) || recommendation?.mode === 'arena'
-  const showPositionFilter = supportsPositionFilter(context, recommendation)
   const titleTextRef = useRef<HTMLDivElement>(null)
   const titleNameRef = useRef<HTMLSpanElement>(null)
   useFitTitleFontSize(titleTextRef, titleNameRef, championName)
@@ -142,9 +139,7 @@ export function OpggBuildRecommendationPanel({
           </div>
         </div>
         <div className="sobp-title-actions">
-          {showPositionFilter && (
-            <PositionFilterSelect value={context.position} onChange={onPositionChange} />
-          )}
+          <PositionFilterSelect value={context.position} onChange={onPositionChange} />
           <TierFilterSelect value={selectedTier} onChange={onTierChange} />
           <TrendMeta meta={recommendation?.meta} />
           <SummaryCards values={recommendation?.summary ?? []} />
@@ -157,7 +152,7 @@ export function OpggBuildRecommendationPanel({
       <main className="sobp-body">
         <div className="sobp-grid">
           <ItemSection title={'核心装备'} builds={recommendation?.coreItems} itemLimit={3} />
-          <RuneSection title={'符文搭配'} runes={recommendation?.runePages} championName={championName} modeLabel={recommendation?.modeLabel || queueText} />
+          <RuneSection title={'符文搭配'} runes={recommendation?.runePages} championName={championName} queueName={queueText} />
           <SpellSection title={'召唤师技能'} builds={recommendation?.summonerSpells} limit={MAX_RECOMMENDATION_ROWS} />
         </div>
 
@@ -166,8 +161,6 @@ export function OpggBuildRecommendationPanel({
         </div>
 
         <MatchupSection title={'优势 / 劣势对局'} matchups={recommendation?.matchups} />
-
-        {showAugments && <AugmentSection title={'海克斯推荐'} groups={recommendation?.augments} winRateFirst={isKiwiMode(context)} />}
 
         {isLoading && <PanelMessage>{'正在后台加载 OP.GG 推荐数据，完成后会自动刷新。'}</PanelMessage>}
         {loadError && <PanelMessage warning>{`OP.GG 请求失败：${loadError}`}</PanelMessage>}
@@ -205,17 +198,6 @@ function TierFilterSelect({ value, onChange }: { value: OpggTier; onChange: (tie
       />
     </div>
   )
-}
-
-function isKiwiMode(context: RecommendationContext): boolean {
-  return context.gameMode.toLowerCase() === 'kiwi'
-}
-
-function supportsPositionFilter(context: RecommendationContext, recommendation: BuildRecommendation | null): boolean {
-  if (recommendation) return recommendation.mode === 'ranked'
-
-  const mode = context.gameMode.toLowerCase()
-  return !['aram', 'kiwi', 'cherry', 'arena', 'nexusblitz', 'nexus_blitz', 'urf', 'arurf'].includes(mode)
 }
 
 function formatPositionText(position: OpggPosition): string {
@@ -497,7 +479,7 @@ function MatchupGroup({ title, items, tone }: { title: string; items: BuildRecom
   )
 }
 
-function RuneSection({ title, runes, championName, modeLabel }: { title: string; runes?: OpggRuneBuild[]; championName: string; modeLabel: string }) {
+function RuneSection({ title, runes, championName, queueName }: { title: string; runes?: OpggRuneBuild[]; championName: string; queueName: string }) {
   const visibleRunes = runes?.slice(0, MAX_RECOMMENDATION_ROWS) ?? []
   const maxRate = getMaxRunePickRate(visibleRunes, 0.15)
   const [applyingKey, setApplyingKey] = useState('')
@@ -511,7 +493,7 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
     setApplyErrorKey('')
 
     try {
-      const pageName = `${championName} ${modeLabel} - Sona`
+      const pageName = `${championName} ${queueName} - Sona`
       await lcu.applyRunePage({
         name: pageName,
         primaryStyleId: rune.primary_page_id,
@@ -523,7 +505,7 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
         ],
       })
       setAppliedKey(key)
-      Toast.success(`${championName} ${modeLabel} 符文已应用 - Sona`)
+      Toast.success(`${championName} ${queueName} 符文已应用 - Sona`)
     } catch {
       setApplyErrorKey(key)
     } finally {
@@ -584,52 +566,6 @@ function RuneSection({ title, runes, championName, modeLabel }: { title: string;
       })}
     </Section>
   )
-}
-
-function AugmentSection({ title, groups, winRateFirst = false }: { title: string; groups?: BuildRecommendation['augments']; winRateFirst?: boolean }) {
-  const visibleGroups = groups ?? []
-
-  return (
-    <div className="sobp-augment-wrap">
-      <Section title={title} empty={visibleGroups.length === 0}>
-        {visibleGroups.map((group) => (
-          <div className="sobp-augment-group" key={group.rarity}>
-            <div className="sobp-augment-rarity">{group.label ?? getAugmentRarityLabel(group.rarity)}</div>
-            <div className="sobp-augment-grid">
-              {group.items.map((augment) => {
-                const info = getAugmentInfo(augment.id)
-                const detailText = Number.isFinite(augment.winRate)
-                  ? formatAugmentWinRateText(augment, winRateFirst)
-                  : `登场 ${formatPercent(augment.pickRate)} · 均排 ${formatPlace(augment.averagePlace)}`
-                return (
-                  <div className="sobp-augment" key={augment.id}>
-                    <BuildIcon
-                      src={info?.iconPath ?? ''}
-                      title={info?.name ?? String(augment.id)}
-                      description={info?.description ?? ''}
-                      subtitle={group.label ?? getAugmentRarityLabel(group.rarity)}
-                      size={40}
-                      border={getAugmentBorder(info?.rarity)}
-                    />
-                    <div className="sobp-augment-info">
-                      <div className="sobp-augment-name">{info?.name ?? String(augment.id)}</div>
-                      <div className="sobp-augment-meta">{detailText}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </Section>
-    </div>
-  )
-}
-
-function formatAugmentWinRateText(augment: { pickRate: number; winRate?: number }, winRateFirst: boolean): string {
-  const winRateText = `胜率 ${formatPercent(augment.winRate)}`
-  const pickRateText = `登场 ${formatPercent(augment.pickRate)}`
-  return winRateFirst ? `${winRateText} · ${pickRateText}` : `${pickRateText} · ${winRateText}`
 }
 
 function RankBadge({ rank }: { rank: number }) {
@@ -876,23 +812,4 @@ function getMaxRunePickRate(runes: OpggRuneBuild[], fallback: number): number {
 function formatPercent(value: number | undefined): string {
   if (!Number.isFinite(value)) return '-'
   return `${((value ?? 0) * 100).toFixed(1)}%`
-}
-
-function formatPlace(value: number | undefined): string {
-  if (!Number.isFinite(value)) return '-'
-  return `${(value ?? 0).toFixed(2)}名`
-}
-
-function getAugmentRarityLabel(rarity: number): string {
-  if (rarity === 1) return '银色'
-  if (rarity === 4) return '金色'
-  if (rarity === 8) return '棱彩'
-  return `稀有度 ${rarity}`
-}
-
-function getAugmentBorder(rarity: string | undefined): string {
-  if (rarity === 'kPrismatic') return '#b788ff'
-  if (rarity === 'kGold') return '#c8aa6e'
-  if (rarity === 'kSilver') return '#a09b8c'
-  return '#3c2e16'
 }

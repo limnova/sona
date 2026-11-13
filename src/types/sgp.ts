@@ -37,8 +37,6 @@ export interface SgpGameSummaryJsonLol {
   gameEndTimestamp: number
   gameId: number
   gameMode: string
-  /** 模式变体，如 ARAM 的 "mapskin_ha_bilgewater" */
-  gameModeMutators: string[]
   gameName: string
   gameStartTimestamp: number
   gameType: string
@@ -176,14 +174,6 @@ export interface SgpParticipantLol {
   physicalDamageDealt: number
   physicalDamageDealtToChampions: number
   physicalDamageTaken: number
-  placement: number
-  playerAugment1: number
-  playerAugment2: number
-  playerAugment3: number
-  playerAugment4: number
-  playerAugment5: number
-  playerAugment6: number
-  playerSubteamId: number
   profileIcon: number
   pushPings: number
   puuid: string
@@ -200,7 +190,6 @@ export interface SgpParticipantLol {
   spell2Id: number
   spell3Casts: number
   spell4Casts: number
-  subteamPlacement: number
   summoner1Casts: number
   summoner2Casts: number
   summonerId: number

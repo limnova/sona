@@ -15,7 +15,6 @@ export function ToolsPage() {
   const [opggBuildRecommendation, setOpggBuildRecommendation] = useState(store.get('opggBuildRecommendation'))
   const [smartBuildRecommendation, setSmartBuildRecommendation] = useState(store.get('smartBuildRecommendation'))
   const [smartItemSetBuild, setSmartItemSetBuild] = useState(store.get('smartItemSetBuild'))
-  const [balanceBuffTooltip, setBalanceBuffTooltip] = useState(store.get('balanceBuffTooltip'))
   const [gameAnalysisPopup, setGameAnalysisPopup] = useState(store.get('gameAnalysisPopup'))
   const [analyzeTeamPower, setAnalyzeTeamPower] = useState(store.get('analyzeTeamPower'))
   const [analyzeTeamPowerFetchCount, setAnalyzeTeamPowerFetchCount] = useState(store.get('analyzeTeamPowerFetchCount'))
@@ -41,7 +40,6 @@ export function ToolsPage() {
       store.onChange('opggBuildRecommendation', setOpggBuildRecommendation),
       store.onChange('smartBuildRecommendation', setSmartBuildRecommendation),
       store.onChange('smartItemSetBuild', setSmartItemSetBuild),
-      store.onChange('balanceBuffTooltip', setBalanceBuffTooltip),
       store.onChange('gameAnalysisPopup', setGameAnalysisPopup),
       store.onChange('analyzeTeamPower', setAnalyzeTeamPower),
       store.onChange('analyzeTeamPowerFetchCount', setAnalyzeTeamPowerFetchCount),
@@ -79,7 +77,7 @@ export function ToolsPage() {
       <h2 className="sona-settings-title">{'排位分析'}</h2>
 
       <SettingGroup title={'战绩查询'}>
-        <p className="sona-subtitle" style={{ marginBottom: 10 }}>{'输入召唤师名#Tag 查询国服玩家的近期战绩，支持国服大区互通查询。'}</p>
+        <p className="sona-subtitle" style={{ marginBottom: 10 }}>{'仅支持召唤师峡谷。输入召唤师名#Tag 查询国服玩家的近期战绩，支持国服大区互通查询。'}</p>
         <div className="sona-match-search-actions" style={{ alignItems: 'flex-end', gap: 8 }}>
           <div style={{ flex: 1 }}>
             <SonaInput
@@ -134,7 +132,7 @@ export function ToolsPage() {
         </SettingCard>
         <SettingCard
           title={'英雄 T 级角标'}
-          description={'英雄选择时在英雄列表、备选席和左侧队友头像上显示 T 级角标。'}
+          description={'英雄选择时在英雄列表和左侧队友头像上显示 T 级角标。'}
         >
           <SonaSwitch
             checked={champSelectTierBadge}
@@ -143,7 +141,7 @@ export function ToolsPage() {
         </SettingCard>
         <SettingCard
           title={'配装推荐面板'}
-          description={'锁定英雄后，点击皮肤选择下方的按钮以打开当前英雄的 OP.GG 配装、符文和海克斯推荐。'}
+          description={'锁定英雄后，点击皮肤选择下方的按钮以打开当前英雄的 OP.GG 配装和符文推荐。'}
         >
           <SonaSwitch
             checked={opggBuildRecommendation}
@@ -152,7 +150,7 @@ export function ToolsPage() {
         </SettingCard>
         <SettingCard
           title={'自动配置符文 & 召唤师技能'}
-          description={'按"英雄 + 模式"保存并恢复符文与召唤师技能；首次使用会在进入游戏前记录最终配置。'}
+          description={'按英雄保存并恢复符文与召唤师技能；首次使用会在进入游戏前记录最终配置。'}
         >
           <SonaSwitch
             checked={smartBuildRecommendation}
@@ -161,20 +159,11 @@ export function ToolsPage() {
         </SettingCard>
         <SettingCard
           title={'自动配装'}
-          description={'锁定英雄后按模式和分路自动写入 OP.GG 推荐装备集。（暂不推荐使用，可能导致配装错乱）'}
+          description={'锁定英雄后按分路自动写入 OP.GG 推荐装备集。（暂不推荐使用，可能导致配装错乱）'}
         >
           <SonaSwitch
             checked={smartItemSetBuild}
             onChange={(v) => { setSmartItemSetBuild(v); store.set('smartItemSetBuild', v) }}
-          />
-        </SettingCard>
-        <SettingCard
-          title={'平衡性调整buff提示'}
-          description={'游玩特定模式（大乱斗、无限火力）时，鼠标悬停在英雄头像上，显示对应的平衡性数值调整。'}
-        >
-          <SonaSwitch
-            checked={balanceBuffTooltip}
-            onChange={(v) => { setBalanceBuffTooltip(v); store.set('balanceBuffTooltip', v) }}
           />
         </SettingCard>
         <SettingCard

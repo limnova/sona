@@ -7,15 +7,6 @@
 
 // ==================== 召唤师相关 ====================
 
-/** ARAM 重随点数 */
-export interface RerollPoints {
-  currentPoints: number
-  maxRolls: number
-  numberOfRolls: number
-  pointsCostToRoll: number
-  pointsToReroll: number
-}
-
 /** 当前召唤师信息 — GET /lol-summoner/v1/current-summoner */
 export interface SummonerInfo {
   accountId: number
@@ -28,7 +19,6 @@ export interface SummonerInfo {
   privacy: 'PUBLIC' | 'PRIVATE' | (string & {})
   profileIconId: number
   puuid: string
-  rerollPoints: RerollPoints
   summonerId: number
   summonerLevel: number
   unnamed: boolean
@@ -237,11 +227,8 @@ export interface ChampSelectSession {
   allowDuplicatePicks: boolean
   allowLockedEvents: boolean
   allowPlayerPickSameChampion: boolean
-  allowRerolling: boolean
   allowSkinSelection: boolean
   allowSubsetChampionPicks: boolean
-  benchChampions: BenchChampion[] // ARAM 模式，共享池中的英雄
-  benchEnabled: boolean
   boostableSkinCount: number
   chatDetails: {
     mucJwtDto: {
@@ -268,7 +255,6 @@ export interface ChampSelectSession {
   pickOrderSwaps: unknown[]
   positionSwaps: unknown[]
   queueId: number
-  rerollsRemaining: number
   showQuitButton: boolean
   skipChampionSelect: boolean
   theirTeam: ChampSelectPlayer[]
@@ -285,12 +271,6 @@ export interface ChampSelectSession {
     theirTeamBans: number[]
     numBans: number
   }
-}
-
-/** 替补席英雄（ARAM 模式） */
-export interface BenchChampion {
-  championId: number
-  isPriority: boolean
 }
 
 /** 英雄交易状态 */
@@ -441,14 +421,6 @@ export interface ChampSelectPlayerDetail {
 
 /** 常用队列ID */
 export enum QueueId {
-  /** 云顶之弈 (普通) */
-  TFT_NORMAL = 1090,
-  /** 云顶之弈 (排位) */
-  TFT_RANKED = 1100,
-  /** 云顶之弈 (超级激斗) */
-  TFT_HYPER_ROLL = 1130,
-  /** 云顶之弈 (双人作战) */
-  TFT_DOUBLE_UP = 1160,
   /** 单/双排位 */
   RANKED_SOLO = 420,
   /** 灵活排位 */
@@ -457,8 +429,6 @@ export enum QueueId {
   NORMAL_BLIND = 430,
   /** 征召模式 */
   NORMAL_DRAFT = 400,
-  /** 极地大乱斗 */
-  ARAM = 450,
 }
 
 // ==================== 战绩相关 ====================
@@ -485,7 +455,6 @@ export interface MatchGame {
   gameDuration: number
   gameId: number
   gameMode: string
-  gameModeMutators: string[]
   gameType: string
   gameVersion: string
   mapId: number
@@ -638,12 +607,6 @@ export interface ParticipantStats {
   physicalDamageDealt: number
   physicalDamageDealtToChampions: number
   physicalDamageTaken: number
-  playerAugment1: number
-  playerAugment2: number
-  playerAugment3: number
-  playerAugment4: number
-  playerAugment5: number
-  playerAugment6: number
   playerScore0: number
   playerScore1: number
   playerScore2: number
@@ -654,11 +617,9 @@ export interface ParticipantStats {
   playerScore7: number
   playerScore8: number
   playerScore9: number
-  playerSubteamId: number
   quadraKills: number
   roleBoundItem: number
   sightWardsBoughtInGame: number
-  subteamPlacement: number
   teamEarlySurrendered: boolean
   timeCCingOthers: number
   totalDamageDealt: number
@@ -707,7 +668,6 @@ export interface GameTypeConfig {
   onboardCoopBeginner: boolean
   pickMode: string
   postPickTimerDuration: number
-  reroll: boolean
   teamChampionPool: boolean
 }
 

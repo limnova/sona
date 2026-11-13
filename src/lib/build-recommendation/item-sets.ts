@@ -1,12 +1,13 @@
-import { getItemPrice } from '@/lib/assets'
+import { isSummonersRift } from '@/lib/game-mode'
+import { getItemPrice, getQueueName } from '@/lib/assets'
 import type { ItemSet, ItemSetBlock } from '@/lib/lcu'
 import type { OpggItemBuild } from '@/lib/opgg-api'
 import type { BuildRecommendation, RecommendationContext } from '@/types/build-recommendation'
-import { getChampionName, getPositionLabel, isKiwiMode, resolveOpggMode } from './context'
+import { getChampionName, getPositionLabel } from './context'
 
 const SONA_ITEM_SET_TITLE_PREFIX = '[Sona]'
 const HEALTH_POTION_ID = 2003
-const ITEM_SET_ASSOCIATED_MAPS = [11, 12, 30]
+const ITEM_SET_ASSOCIATED_MAPS = [11]
 
 function toItemSetEntry(id: number) {
   return {
@@ -71,7 +72,6 @@ function buildItemSetBlocks(recommendation: BuildRecommendation): ItemSetBlock[]
   const blocks: ItemSetBlock[] = []
   const starterItems = sortItemBuildsByWinRate(recommendation.starterItems)
   const boots = sortItemBuildsByWinRate(recommendation.boots)
-  const prismItems = sortItemBuildsByWinRate(recommendation.prismItems)
   const coreItems = sortItemBuildsByWinRate(recommendation.coreItems)
   const lastItems = sortItemBuildsByWinRate(recommendation.lastItems)
 
@@ -80,10 +80,6 @@ function buildItemSetBlocks(recommendation: BuildRecommendation): ItemSetBlock[]
   })
 
   appendItemSetBlock(blocks, `${blocks.length + 1}. 鞋子`, flattenItemBuilds(boots))
-
-  if (prismItems.length > 0) {
-    appendItemSetBlock(blocks, `${blocks.length + 1}. 棱彩装备`, flattenItemBuilds(prismItems))
-  }
 
   coreItems.slice(0, 5).forEach((build, index) => {
     appendItemSetBlock(blocks, `${blocks.length + 1}. 核心装 ${index + 1}`, build.ids)
@@ -95,25 +91,26 @@ function buildItemSetBlocks(recommendation: BuildRecommendation): ItemSetBlock[]
 }
 
 export function getManagedItemSetUid(context: RecommendationContext): string {
-  // 带上模式 + 分路，使不同分路 / 模式各自拥有独立的 item set，互不覆盖
-  const mode = isKiwiMode(context) ? 'kiwi' : resolveOpggMode(context)
-  return `sona-${context.championId}-${mode}-${context.position}`
+  // 保持既有 UID，避免升级后重复创建峡谷装备集。
+  return `sona-${context.championId}-ranked-${context.position}`
 }
 
-function getManagedItemSetTitle(context: RecommendationContext, recommendation: BuildRecommendation): string {
+function getManagedItemSetTitle(context: RecommendationContext): string {
   const championName = getChampionName(context.championId)
   const positionLabel = getPositionLabel(context.position)
-  const suffix = positionLabel ? `${recommendation.modeLabel}/${positionLabel}` : recommendation.modeLabel
+  const queueName = getQueueName(context.queueId)
+  const suffix = positionLabel ? `${queueName}/${positionLabel}` : queueName
   return `${SONA_ITEM_SET_TITLE_PREFIX} ${championName} - ${suffix}`
 }
 
 export function createManagedItemSet(context: RecommendationContext, recommendation: BuildRecommendation): ItemSet | null {
+  if (!isSummonersRift(context)) return null
   const blocks = buildItemSetBlocks(recommendation)
   if (blocks.length === 0) return null
 
   return {
     uid: getManagedItemSetUid(context),
-    title: getManagedItemSetTitle(context, recommendation),
+    title: getManagedItemSetTitle(context),
     type: 'custom',
     mode: 'any',
     map: 'any',
@@ -127,7 +124,7 @@ export function createManagedItemSet(context: RecommendationContext, recommendat
 }
 
 function isSameManagedItemSetContext(itemSet: ItemSet, nextItemSet: ItemSet): boolean {
-  // 仅在 uid 或标题完全一致时替换；不同分路 / 模式的 Sona 配装得以并存，
+  // 仅在 uid 或标题完全一致时替换；其他分路和既有 Sona 配装得以并存，
   // 不再因"同英雄"被整体清掉。
   return itemSet.uid === nextItemSet.uid || itemSet.title === nextItemSet.title
 }

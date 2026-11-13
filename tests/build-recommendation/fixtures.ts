@@ -2,7 +2,7 @@ import type { BuildRecommendation, RecommendationContext } from '@/types/build-r
 import type { OpggItemBuild } from '@/lib/opgg-api'
 
 export const context: RecommendationContext = {
-  championId: 37, queueId: 420, gameVersion: '16.1', gameMode: 'CLASSIC', position: 'support',
+  championId: 37, queueId: 420, gameVersion: '16.1', gameMode: 'CLASSIC', mapId: 11, position: 'support',
 }
 
 export function itemBuild(ids: number[], win = 50, play = 100): OpggItemBuild {
@@ -11,8 +11,8 @@ export function itemBuild(ids: number[], win = 50, play = 100): OpggItemBuild {
 
 export function recommendation(overrides: Partial<BuildRecommendation> = {}): BuildRecommendation {
   return {
-    mode: 'ranked', modeLabel: '单排', version: '16.1', position: 'support', summary: [],
+    version: '16.1', position: 'support', summary: [],
     summonerSpells: [], starterItems: [], boots: [], coreItems: [itemBuild([3001])],
-    prismItems: [], lastItems: [], runePages: [], matchups: [], augments: [], ...overrides,
+    lastItems: [], runePages: [], matchups: [], ...overrides,
   }
 }

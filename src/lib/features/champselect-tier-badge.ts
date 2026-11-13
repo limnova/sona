@@ -1,17 +1,16 @@
 /**
  * 英雄选择 T 级角标
  *
- * 在客户端英雄选择列表、备选席和左侧队友头像上展示全英雄梯度：
- * 常规模式使用 OP.GG，海克斯大乱斗（KIWI）使用 ARAM.GG 的专属 T1-T5 数据。
+ * 在客户端英雄选择列表和左侧队友头像上展示全英雄梯度：
+ * 仅在召唤师峡谷模式下使用 OP.GG 数据。
  * 由独立的“英雄 T 级角标”开关（champSelectTierBadge）控制。
  */
 
 import { logger } from '@/index'
 import { injector } from '@/lib/InjectorManager'
-import { getQueue } from '@/lib/assets'
 import { lcu, LcuEventUri, type ChampSelectSession, type LCUEventMessage } from '@/lib/lcu'
-import { aramggApi, type AramggChampionsStats } from '@/lib/aramgg-api'
-import { opggApi, type OpggChampionsTier, type OpggMode, type OpggRankedDataItem, type OpggTier } from '@/lib/opgg-api'
+import { isSummonersRiftChampSelect } from '@/lib/game-context'
+import { opggApi, type OpggChampionsTier, type OpggRankedDataItem, type OpggTier } from '@/lib/opgg-api'
 import { store } from '@/lib/store'
 import type { GameflowPhase } from '@/types/lcu'
 
@@ -25,7 +24,6 @@ import tier5Icon from '@/../assets/tier/t5.svg'
 const BADGE_TARGETS = [
   { selector: '.champion-grid-champion-thumbnail', size: 22, left: -2, top: 0 },
   { selector: '.champion-card-component-click-target', size: 22, left: -2, top: 0 },
-  { selector: '.bench-champion-icon', size: 18, left: -2, top: -2 },
 ]
 const PLAYER_ICON_BADGE_TARGET = { size: 20, left: -2, top: 'auto', bottom: -2 }
 const BADGE_TARGET_SELECTOR = BADGE_TARGETS.map((target) => target.selector).join(',')
@@ -68,9 +66,6 @@ const TIER_LABEL_MAP = new Map<number, string>([
   [4, 'T4'],
   [5, 'T5'],
 ])
-type TierDataMode = OpggMode | 'kiwi'
-
-const PRELOAD_MODES: TierDataMode[] = ['ranked', 'aram', 'arena', 'kiwi', 'urf', 'nexus_blitz']
 
 interface TierCacheEntry {
   data?: Map<number, ChampionTierStats>
@@ -95,22 +90,8 @@ function normalizeOpggTier(value: string): OpggTier {
   return SELECTABLE_OPGG_TIERS.includes(value as OpggTier) ? value as OpggTier : DEFAULT_OPGG_TIER
 }
 
-function resolveTierDataMode(gameMode: string): TierDataMode {
-  const mode = gameMode.toLowerCase()
-  if (mode === 'kiwi') return 'kiwi'
-  if (mode === 'aram') return 'aram'
-  if (mode === 'cherry' || mode === 'arena') return 'arena'
-  if (mode === 'nexusblitz' || mode === 'nexus_blitz') return 'nexus_blitz'
-  if (mode === 'urf' || mode === 'arurf') return 'urf'
-  return 'ranked'
-}
-
-function getEffectiveTier(mode: TierDataMode): OpggTier {
-  return mode === 'arena' || mode === 'kiwi' ? 'all' : normalizeOpggTier(store.get('opggBuildRecommendationTier'))
-}
-
-function getTierCacheKey(mode: TierDataMode, tier: OpggTier): string {
-  return `${mode}|${tier}`
+function getSelectedTier(): OpggTier {
+  return normalizeOpggTier(store.get('opggBuildRecommendationTier'))
 }
 
 function getBestRankedStats(champion: OpggRankedDataItem): ChampionTierStats {
@@ -131,24 +112,6 @@ function getBestRankedStats(champion: OpggRankedDataItem): ChampionTierStats {
   }
 }
 
-function extractStatsFromChampion(champion: OpggChampionsTier['data'][number], mode: OpggMode): ChampionTierStats {
-  if (mode === 'ranked') {
-    return getBestRankedStats(champion as OpggRankedDataItem)
-  }
-
-  const averageStats = champion.average_stats
-  if (!averageStats) return { tier: null, winRate: null }
-
-  const winRate = 'win_rate' in averageStats
-    ? toValidWinRate(averageStats.win_rate)
-    : toValidWinRate(averageStats.play > 0 ? averageStats.win / averageStats.play : null)
-
-  return {
-    tier: toValidTier(averageStats.tier),
-    winRate,
-  }
-}
-
 function toValidTier(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 5 ? value : null
 }
@@ -157,57 +120,35 @@ function toValidWinRate(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 }
 
-function buildTierMap(data: OpggChampionsTier, mode: OpggMode): Map<number, ChampionTierStats> {
+function buildTierMap(data: OpggChampionsTier): Map<number, ChampionTierStats> {
   const result = new Map<number, ChampionTierStats>()
 
   for (const champion of data.data) {
-    const stats = extractStatsFromChampion(champion, mode)
+    const stats = getBestRankedStats(champion)
     if (stats.tier != null || stats.winRate != null) result.set(champion.id, stats)
   }
 
   return result
 }
 
-function buildAramggTierMap(data: AramggChampionsStats): Map<number, ChampionTierStats> {
-  const result = new Map<number, ChampionTierStats>()
-
-  for (const champion of data) {
-    const championId = Number(champion.championId)
-    const tier = Number(champion.tier)
-    const winRate = champion.winRate
-    if (!Number.isFinite(championId) || championId <= 0) continue
-
-    const stats: ChampionTierStats = {
-      tier: Number.isFinite(tier) && tier >= 1 && tier <= 5 ? tier : null,
-      winRate: toValidWinRate(winRate),
-    }
-    if (stats.tier != null || stats.winRate != null) result.set(championId, stats)
-  }
-
-  return result
-}
-
-function ensureTierMap(mode: TierDataMode, tier = getEffectiveTier(mode)): Promise<Map<number, ChampionTierStats>> {
-  const cacheKey = getTierCacheKey(mode, tier)
+function ensureTierMap(tier = getSelectedTier()): Promise<Map<number, ChampionTierStats>> {
+  const cacheKey = tier
   const cached = tierCache.get(cacheKey)
   if (cached?.data) return Promise.resolve(cached.data)
   if (cached?.promise) return cached.promise
 
   const entry: TierCacheEntry = {}
-  const source = mode === 'kiwi' ? 'ARAM.GG' : 'OP.GG'
-  entry.promise = (mode === 'kiwi'
-    ? aramggApi.getChampionsStats().then(buildAramggTierMap)
-    : opggApi.getChampionsTier({ mode, tier }).then((data) => buildTierMap(data, mode)))
+  entry.promise = opggApi.getChampionsTier({ tier }).then(buildTierMap)
     .then((tierMap) => {
       entry.data = tierMap
       entry.promise = undefined
-      logger.info('[ChampTier] 已缓存 %s 英雄 T 级 → mode=%s, tier=%s, count=%d', source, mode, tier, tierMap.size)
+      logger.info('[ChampTier] 已缓存 OP.GG 英雄 T 级 → tier=%s, count=%d', tier, tierMap.size)
       return tierMap
     })
     .catch((err) => {
       entry.promise = undefined
       tierCache.delete(cacheKey)
-      logger.warn('[ChampTier] %s 英雄 T 级预加载失败 → mode=%s, tier=%s:', source, mode, tier, err)
+      logger.warn('[ChampTier] OP.GG 英雄 T 级预加载失败 → tier=%s:', tier, err)
       throw err
     })
 
@@ -216,36 +157,25 @@ function ensureTierMap(mode: TierDataMode, tier = getEffectiveTier(mode)): Promi
 }
 
 export function preloadChampSelectTierBadgeData() {
-  const selectedTier = normalizeOpggTier(store.get('opggBuildRecommendationTier'))
-  logger.info('[ChampTier] 开始预加载全模式英雄 T 级数据 → tier=%s', selectedTier)
-
-  PRELOAD_MODES.forEach((mode) => {
-    const tier = mode === 'arena' || mode === 'kiwi' ? 'all' : selectedTier
-    void ensureTierMap(mode, tier).catch(() => { /* logged in ensureTierMap */ })
-  })
-}
-
-async function resolveCurrentContext(session?: ChampSelectSession): Promise<{ mode: TierDataMode; gameMode: string; queueId: number }> {
-  const currentSession = session ?? await lcu.getChampSelectSession().catch(() => null)
-  const queueId = currentSession?.queueId ?? 0
-  const queueMode = queueId > 0 ? getQueue(queueId)?.gameMode : ''
-
-  if (queueMode) {
-    return { mode: resolveTierDataMode(queueMode), gameMode: queueMode, queueId }
-  }
-
-  const gameflow = await lcu.getGameflowSession().catch(() => null)
-  const gameMode = gameflow?.gameData?.queue?.gameMode || gameflow?.map?.gameMode || ''
-  return { mode: resolveTierDataMode(gameMode), gameMode, queueId: queueId || gameflow?.gameData?.queue?.id || 0 }
+  const selectedTier = getSelectedTier()
+  logger.info('[ChampTier] 开始预加载峡谷英雄 T 级数据 → tier=%s', selectedTier)
+  void ensureTierMap(selectedTier).catch(() => { /* logged in ensureTierMap */ })
 }
 
 async function loadTierData(session?: ChampSelectSession) {
   const token = ++loadToken
   const activeSession = session ?? await lcu.getChampSelectSession().catch(() => null)
   currentSession = activeSession
-  const { mode, gameMode, queueId } = await resolveCurrentContext(activeSession ?? undefined)
-  const tier = getEffectiveTier(mode)
-  const cacheKey = getTierCacheKey(mode, tier)
+  const supported = activeSession && await isSummonersRiftChampSelect(activeSession)
+  if (token !== loadToken) return
+  if (!supported) {
+    currentCacheKey = ''
+    tierByChampionId = new Map()
+    cleanupBadges()
+    return
+  }
+  const tier = getSelectedTier()
+  const cacheKey = tier
 
   if (cacheKey === currentCacheKey && tierByChampionId.size > 0) {
     tryInjectTierBadges()
@@ -253,10 +183,10 @@ async function loadTierData(session?: ChampSelectSession) {
   }
 
   currentCacheKey = cacheKey
-  logger.info('[ChampTier] 读取英雄 T 级缓存 → mode=%s, tier=%s, gameMode=%s, queueId=%d', mode, tier, gameMode || 'unknown', queueId)
+  logger.info('[ChampTier] 读取英雄 T 级缓存 → tier=%s, queueId=%d', tier, activeSession.queueId)
 
   try {
-    const tierMap = await ensureTierMap(mode, tier)
+    const tierMap = await ensureTierMap(tier)
     if (token !== loadToken) return
 
     tierByChampionId = tierMap
@@ -272,7 +202,6 @@ function extractChampionId(target: Element): number | null {
     target,
     target.parentElement,
     target.closest('.champion-card-component'),
-    target.closest('.bench-champion'),
     target.closest('.champion-grid-champion'),
     target.closest('[data-champion-id]'),
     target.closest('[data-champion-id-value]'),
@@ -477,7 +406,13 @@ export function updateChampSelectTierBadge(enabled: boolean) {
 
     champSelectUnsub = lcu.observe(LcuEventUri.CHAMP_SELECT, (event: LCUEventMessage) => {
       if (event.eventType !== 'Create' && event.eventType !== 'Update') return
+      const previousQueueId = currentSession?.queueId
       currentSession = event.data as ChampSelectSession
+      if (previousQueueId !== currentSession.queueId) {
+        currentCacheKey = ''
+        tierByChampionId = new Map()
+        cleanupBadges()
+      }
       if (tierByChampionId.size === 0) {
         void loadTierData(event.data as ChampSelectSession)
       } else {

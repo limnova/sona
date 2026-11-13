@@ -1,4 +1,3 @@
-export type OpggMode = 'aram' | 'arena' | 'nexus_blitz' | 'urf' | 'ranked'
 export type OpggTier = 'all' | 'ibsg' | 'iron' | 'bronze' | 'silver' | 'gold' | 'gold_plus' | 'platinum' | 'platinum_plus' | 'emerald' | 'emerald_plus' | 'diamond' | 'diamond_plus' | 'master' | 'master_plus' | 'grandmaster' | 'challenger'
 export type OpggPosition = 'mid' | 'jungle' | 'adc' | 'top' | 'support' | 'all' | 'none'
 
@@ -28,20 +27,6 @@ export interface OpggAverageStats {
   }
 }
 
-export interface OpggArenaAverageStats {
-  win: number
-  play: number
-  total_place: number
-  first_place: number
-  pick_rate: number
-  ban_rate: number
-  kills: number
-  assists: number
-  deaths: number
-  tier: number
-  rank: number
-}
-
 export interface OpggSummary {
   id: number
   is_rotation: boolean
@@ -49,13 +34,6 @@ export interface OpggSummary {
   average_stats: OpggAverageStats
   positions: null
   roles: unknown[]
-}
-
-export interface OpggArenaSummary {
-  id: number
-  is_rotation: boolean
-  is_rip: boolean
-  average_stats: OpggArenaAverageStats
 }
 
 export interface OpggItemBuild {
@@ -136,7 +114,7 @@ export interface OpggCounter {
   win: number
 }
 
-export interface OpggNormalChampionData {
+export interface OpggChampionData {
   summary: OpggSummary
   summoner_spells: OpggItemBuild[]
   core_items: OpggItemBuild[]
@@ -152,71 +130,11 @@ export interface OpggNormalChampionData {
   trends: OpggTrends
   game_lengths: OpggGameLength[]
   counters: OpggCounter[]
-  augment_group?: OpggAugmentGroup[]
 }
 
-export interface OpggAugment {
-  id: number
-  win: number
-  play: number
-  total_place: number
-  first_place: number
-  pick_rate: number
-}
-
-export interface OpggAugmentGroup {
-  rarity: number
-  augments: OpggAugment[]
-}
-
-export interface OpggSynergy {
-  champion_id: number
-  op_rank: number
-  play: number
-  win: number
-  total_place: number
-  first_place: number
-  pick_rate: number
-}
-
-export interface OpggArenaChampionData {
-  summary: OpggArenaSummary
-  core_items: OpggItemBuild[]
-  boots: OpggItemBuild[]
-  starter_items: OpggItemBuild[]
-  last_items: OpggItemBuild[]
-  prism_items: OpggItemBuild[]
-  skill_masteries: OpggSkillMastery[]
-  skills: OpggSkillBuild[]
-  skill_evolves: unknown[]
-  augment_group: OpggAugmentGroup[]
-  synergies: OpggSynergy[]
-}
-
-export interface OpggNormalModeChampion {
-  data: OpggNormalChampionData
+export interface OpggChampion {
+  data: OpggChampionData
   meta: OpggMeta
-}
-
-export interface OpggArenaModeChampion {
-  data: OpggArenaChampionData
-  meta: OpggMeta
-}
-
-export interface OpggARAMDataItem {
-  id: number
-  is_rotation: boolean
-  is_rip: boolean
-  average_stats: OpggAverageStats
-  positions: null
-  roles: unknown[]
-}
-
-export interface OpggArenaDataItem {
-  id: number
-  is_rotation: boolean
-  is_rip: boolean
-  average_stats: OpggArenaAverageStats
 }
 
 export interface OpggRankedPositionStats {
@@ -266,55 +184,20 @@ export interface OpggRankedChampionsSummary {
   meta: OpggMeta
 }
 
-export interface OpggARAMChampionSummary {
-  data: OpggARAMDataItem[]
-  meta: OpggMeta
-}
-
-export interface OpggArenaChampionSummary {
-  data: OpggArenaDataItem[]
-  meta: OpggMeta
-}
-
-export interface OpggBalanceDataItem {
-  champion_id: number
-  attack_speed: number
-  damage_dealt: number
-  damage_taken: number
-  cooldown_reduction: number
-  healing: number
-  tenacity: number
-  shield_amount: number
-  energy_regen: number
-  area_of_effect_damage: number
-  default: boolean
-}
-
-export interface OpggARAMBalance {
-  data: OpggBalanceDataItem[]
-}
-
-export type OpggChampionsTier = OpggRankedChampionsSummary | OpggArenaChampionSummary | OpggARAMChampionSummary
-export type OpggChampion = OpggNormalModeChampion | OpggArenaModeChampion
+export type OpggChampionsTier = OpggRankedChampionsSummary
 
 export interface OpggRequestOptions {
   signal?: AbortSignal
   timeoutMs?: number
 }
 
-export interface OpggGetVersionsOptions extends OpggRequestOptions {
-  mode: OpggMode
-}
-
 export interface OpggGetChampionsTierOptions extends OpggRequestOptions {
-  mode: OpggMode
   tier: OpggTier
   version?: string
 }
 
 export interface OpggGetChampionOptions extends OpggRequestOptions {
   id: number
-  mode: OpggMode
   tier: OpggTier
   position?: OpggPosition
   version?: string
@@ -342,14 +225,14 @@ export class OpggDataApi {
   static readonly BASE_URL = 'https://lol-api-champion.op.gg'
   static readonly DEFAULT_TIMEOUT_MS = 10000
 
-  async getVersions(options: OpggGetVersionsOptions): Promise<OpggVersions> {
-    const { mode, signal, timeoutMs } = options
-    return this.request(`/api/global/champions/${mode}/versions`, { signal, timeoutMs })
+  async getVersions(options: OpggRequestOptions = {}): Promise<OpggVersions> {
+    const { signal, timeoutMs } = options
+    return this.request(`/api/global/champions/ranked/versions`, { signal, timeoutMs })
   }
 
   async getChampionsTier(options: OpggGetChampionsTierOptions): Promise<OpggChampionsTier> {
-    const { mode, tier, version, signal, timeoutMs } = options
-    return this.request(`/api/global/champions/${mode}`, {
+    const { tier, version, signal, timeoutMs } = options
+    return this.request(`/api/global/champions/ranked`, {
       params: { tier, version },
       signal,
       timeoutMs,
@@ -357,21 +240,15 @@ export class OpggDataApi {
   }
 
   async getChampion(options: OpggGetChampionOptions): Promise<OpggChampion> {
-    const { id, mode, tier, version, signal, timeoutMs } = options
-    const position = mode === 'aram' ? 'none' : options.position
-    const path = mode === 'arena'
-      ? `/api/global/champions/${mode}/${id}`
-      : `/api/global/champions/${mode}/${id}/${position ?? 'none'}`
+    const { id, tier, version, signal, timeoutMs } = options
+    const position = options.position
+    const path = `/api/global/champions/ranked/${id}/${position ?? 'none'}`
 
     return this.request(path, {
       params: { tier, version },
       signal,
       timeoutMs,
     })
-  }
-
-  async getARAMBalance(options: OpggRequestOptions = {}): Promise<OpggARAMBalance> {
-    return this.request('/api/contents/aram-balance', options)
   }
 
   private async request<T>(

@@ -1,5 +1,6 @@
+import { isSummonersRift } from '@/lib/game-mode'
 import { useState, type MouseEvent as ReactMouseEvent } from 'react'
-import { getChampIcon, getItemIcon, getSpellIcon, getPerkIcon, getPerkStyleIcon, getQueueName, getMapName } from '@/lib/assets'
+import { getChampIcon, getItemIcon, getSpellIcon, getPerkIcon, getPerkStyleIcon, getQueueName } from '@/lib/assets'
 import type { SgpGameSummaryLol, SgpParticipantLol } from '@/types/sgp'
 
 // ==================== 数据解析 ====================
@@ -51,17 +52,9 @@ export interface MatchRowData {
 /** 从 SGP 对局数据中解析指定玩家的战绩行 */
 export function parseSgpMatch(game: SgpGameSummaryLol, puuid: string): MatchRowData | null {
   const json = game.json
+  if (!isSummonersRift(json)) return null
   const participant = json.participants.find((p: SgpParticipantLol) => p.puuid === puuid)
   if (!participant) return null
-
-  // mapId=12 的地图有多个皮肤变体，通过 gameModeMutators 区分
-  let mapName = getMapName(json.mapId)
-  if (json.mapId === 12) {
-    const mutator = json.gameModeMutators?.[0]
-    if (mutator === 'mapskin_ha_bilgewater') mapName = '屠夫之桥'
-    else if (mutator === 'mapskin_map12_bloom') mapName = '莲华栈桥'
-    else mapName = '嚎哭深渊'
-  }
 
   // SGP 的符文结构：perks.styles[0] = 主系, styles[1] = 副系
   const primaryStyle = participant.perks?.styles?.[0]
@@ -82,7 +75,7 @@ export function parseSgpMatch(game: SgpGameSummaryLol, puuid: string): MatchRowD
     gold: participant.goldEarned,
     damage: participant.totalDamageDealtToChampions,
     queueName: getQueueName(json.queueId),
-    mapName,
+    mapName: '召唤师峡谷',
     spell1Id: participant.spell1Id,
     spell2Id: participant.spell2Id,
     perk0,

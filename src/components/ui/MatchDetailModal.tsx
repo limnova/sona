@@ -1,8 +1,9 @@
+import { isSummonersRift } from '@/lib/game-mode'
 import { getRankName } from '@/lib/rank-names'
 import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { lcu } from '@/lib/lcu'
-import { getChampIcon, getItemIcon, getSpellIcon, getPerkIcon, getPerkStyleIcon, getQueueName, getMapName } from '@/lib/assets'
+import { getChampIcon, getItemIcon, getSpellIcon, getPerkIcon, getPerkStyleIcon, getQueueName } from '@/lib/assets'
 import type { MatchDetail, Participant, ParticipantIdentity, MatchTeam } from '@/types/lcu'
 import blueTurretIcon from '@/../assets/game-statistic-icons/Blue_Turret_icon.png'
 import redTurretIcon from '@/../assets/game-statistic-icons/Red_Turret_icon.png'
@@ -299,6 +300,7 @@ export function MatchDetailModal({ open, onClose, gameId, focusPuuid }: MatchDet
 
     lcu.getMatchDetail(gameId)
       .then(async (data) => {
+        if (!isSummonersRift(data)) throw new Error('仅支持召唤师峡谷对局')
         const rankEntries = await Promise.all(data.participantIdentities.map(async (identity) => {
           const ranked = await lcu.getRankedStats(identity.player.puuid).catch(() => null)
           const participant = data.participants.find((p) => p.participantId === identity.participantId)
@@ -401,7 +403,7 @@ export function MatchDetailModal({ open, onClose, gameId, focusPuuid }: MatchDet
             {detail && (
               <div className="smd-meta">
                 <span>{getQueueName(detail.queueId)}</span>
-                <span>{getMapName(detail.mapId)}</span>
+                <span>{'召唤师峡谷'}</span>
                 <span>{`时长 ${formatDuration(detail.gameDuration)}`}</span>
                 <span>{`开始 ${formatStartTime(detail.gameCreation)}`}</span>
                 <span>{formatDate(detail.gameCreation)}</span>

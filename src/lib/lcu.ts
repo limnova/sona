@@ -592,11 +592,6 @@ class LCUManager {
     return get<unknown[]>('/lol-maps/v1/maps')
   }
 
-  /** 获取地图资源数据（含地图皮肤/突变模式本地化名称） */
-  getMapAssets(): Promise<unknown[]> {
-    return get<unknown[]>('/lol-game-data/assets/v1/maps.json')
-  }
-
   // ==================== 战绩 ====================
 
   /**
@@ -712,7 +707,7 @@ class LCUManager {
    * 通过 SGP 查询战绩列表
    *
    * 相比 LCU 接口的优势：
-   * - 支持 `tag` 参数按队列模式过滤（如 `q_450` 只查大乱斗）
+   * - 支持 `tag` 参数按队列模式过滤（如 `q_420` 只查单双排）
    * - 无浏览器缓存问题
    * - 国服跨区查询
    * - 突破 LCU 100 场上限
@@ -721,7 +716,7 @@ class LCUManager {
    * @param options 查询参数
    * @param options.startIndex 起始索引（默认 0，注意：SGP 用 startIndex 而非 LCU 的 begIndex）
    * @param options.count 获取数量（默认 100，注意：SGP 用 count 而非 LCU 的 endIndex）
-   * @param options.tag 按队列模式过滤，如 `q_450`（大乱斗），不传则查全部模式。使用 `queueIdToTag()` 生成。
+   * @param options.tag 按队列模式过滤，如 `q_420`（单双排），不传则获取原始战绩，由调用方过滤峡谷对局。使用 `queueIdToTag()` 生成。
    */
   async getSgpMatchHistory(puuid: string, options?: {
     startIndex?: number
@@ -863,7 +858,6 @@ class LCUManager {
         gameEndTimestamp: game.gameCreation + game.gameDuration * 1000,
         gameId: game.gameId,
         gameMode: game.gameMode,
-        gameModeMutators: game.gameModeMutators ?? [],
         gameName: '',
         gameStartTimestamp: game.gameCreation,
         gameType: game.gameType,
@@ -1005,14 +999,6 @@ class LCUManager {
       physicalDamageDealt: stats.physicalDamageDealt,
       physicalDamageDealtToChampions: stats.physicalDamageDealtToChampions,
       physicalDamageTaken: stats.physicalDamageTaken,
-      placement: stats.subteamPlacement,
-      playerAugment1: stats.playerAugment1,
-      playerAugment2: stats.playerAugment2,
-      playerAugment3: stats.playerAugment3,
-      playerAugment4: stats.playerAugment4,
-      playerAugment5: stats.playerAugment5,
-      playerAugment6: stats.playerAugment6,
-      playerSubteamId: stats.playerSubteamId,
       profileIcon: player?.profileIcon ?? 0,
       puuid: player?.puuid ?? '',
       quadraKills: stats.quadraKills,
@@ -1023,7 +1009,6 @@ class LCUManager {
       sightWardsBoughtInGame: stats.sightWardsBoughtInGame,
       spell1Id: participant.spell1Id,
       spell2Id: participant.spell2Id,
-      subteamPlacement: stats.subteamPlacement,
       summonerId: player?.summonerId ?? 0,
       summonerLevel: 0,
       summonerName: player?.summonerName ?? player?.gameName ?? '',
@@ -1120,11 +1105,6 @@ class LCUManager {
   /** 获取所有符文系样式（对应 perkPrimaryStyle / perkSubStyle） */
   getPerkStyles(): Promise<{ styles: Array<{ id: number; iconPath: string; name: string }> }> {
     return get('/lol-game-data/assets/v1/perkstyles.json')
-  }
-
-  /** 获取斗魂竞技场 / 海克斯模式强化符文数据 */
-  getAugments(): Promise<Array<{ id: number; nameTRA: string; simpleNameTRA: string; augmentSmallIconPath: string; rarity: string }>> {
-    return get('/lol-game-data/assets/v1/cherry-augments.json')
   }
 
   /** 获取玩家符文页 */

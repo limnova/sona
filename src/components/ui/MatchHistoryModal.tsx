@@ -12,7 +12,7 @@ export interface MatchHistoryModalProps {
   onClose: () => void
   puuid: string
   playerName: string
-  /** 可选：默认过滤的队列 ID，不传则查全部模式 */
+  /** 可选：默认过滤的队列 ID，不传则查全部峡谷队列 */
   queueId?: number
 }
 
@@ -107,7 +107,7 @@ export function MatchHistoryModal({ open, onClose, puuid, playerName, queueId: d
 
   const currentFilterLabel = filterQueueId > 0
     ? (queueOptions.find(q => q.id === filterQueueId)?.name ?? getQueueName(filterQueueId))
-    : '全部模式'
+    : '全部峡谷队列'
 
   return (
     <Modal open={open} onClose={onClose} width={860} height={620}>
@@ -132,7 +132,7 @@ export function MatchHistoryModal({ open, onClose, puuid, playerName, queueId: d
                   onClick={() => handleFilterChange(0)}
                   type="button"
                 >
-                  {'全部模式'}
+                  {'全部峡谷队列'}
                 </button>
                 {queueOptions.map((q) => (
                   <button

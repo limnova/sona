@@ -52,7 +52,6 @@ export interface SonaConfig {
   gameAnalysisFetchCount: number
   lobbyEnhancement: boolean
   lobbyEnhancementFetchCount: number
-  balanceBuffTooltip: boolean
   gameAnalysisPopup: boolean
 }
 
@@ -76,7 +75,6 @@ const DEFAULT_CONFIG: SonaConfig = {
   gameAnalysisFetchCount: 50,
   lobbyEnhancement: true,
   lobbyEnhancementFetchCount: 50,
-  balanceBuffTooltip: false,
   gameAnalysisPopup: false,
 }
 

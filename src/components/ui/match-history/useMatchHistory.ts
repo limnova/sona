@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { lcu, queueIdToTag } from '@/lib/lcu'
 import type { SgpGameSummaryLol } from '@/types/sgp'
+import { isSummonersRiftQueue } from '@/lib/assets'
+import { isSummonersRift } from '@/lib/game-mode'
 
 const PAGE_SIZE = 20
 
@@ -30,17 +32,22 @@ export function useMatchHistory(open: boolean, puuid: string, defaultQueueId = 0
     else setLoadingMore(true)
 
     try {
-      const response = await lcu.getSgpMatchHistory(session.puuid, {
-        startIndex: session.nextIndex,
-        count: PAGE_SIZE,
-        tag: queueIdToTag(session.queueId) || undefined,
-      })
-      if (sessionRef.current !== session) return
-
-      const page = response.games ?? []
+      let page: SgpGameSummaryLol[] = []
+      // 游标按原始响应推进；整页都是其他玩法时继续查找，避免空列表卡住分页。
+      do {
+        const response = await lcu.getSgpMatchHistory(session.puuid, {
+          startIndex: session.nextIndex,
+          count: PAGE_SIZE,
+          tag: queueIdToTag(session.queueId) || undefined,
+        })
+        if (sessionRef.current !== session) return
+        const rawPage = response.games ?? []
+        page = rawPage.filter((game) => isSummonersRift(game.json)
+          && (session.queueId === 0 || game.json.queueId === session.queueId))
+        session.nextIndex += rawPage.length
+        session.hasMore = rawPage.length >= PAGE_SIZE
+      } while (page.length === 0 && session.hasMore)
       setGames((previous) => initial ? page : [...previous, ...page])
-      session.nextIndex += page.length
-      session.hasMore = page.length >= PAGE_SIZE
       setHasMore(session.hasMore)
     } catch {
       if (sessionRef.current !== session) return
@@ -60,9 +67,10 @@ export function useMatchHistory(open: boolean, puuid: string, defaultQueueId = 0
   }, [])
 
   const startSession = useCallback((queueId: number) => {
-    const session: HistorySession = { puuid, queueId, nextIndex: 0, busy: false, hasMore: true }
+    const supportedQueueId = isSummonersRiftQueue(queueId) ? queueId : 0
+    const session: HistorySession = { puuid, queueId: supportedQueueId, nextIndex: 0, busy: false, hasMore: true }
     sessionRef.current = session
-    setFilterQueueId(queueId)
+    setFilterQueueId(supportedQueueId)
     setGames([])
     setError('')
     setHasMore(true)

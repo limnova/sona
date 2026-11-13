@@ -29,7 +29,7 @@ describe('推荐装备集', () => {
 
   it('内容相同时保留客户端标准化后的对象，避免重复写出文件', () => {
     const next = createManagedItemSet(context, recommendation())!
-    const existing = { ...next, map: '11', sortrank: 12, associatedMaps: [30, 12, 11] }
+    const existing = { ...next, map: '11', sortrank: 12, associatedMaps: [11] }
     const plan = planManagedItemSetUpsert([existing], [next])
     expect(plan.changed).toBe(false)
     expect(plan.itemSets[0]).toBe(existing)
@@ -53,16 +53,16 @@ describe('推荐装备集', () => {
     expect(planManagedItemSetUpsert(first.itemSets, next).changed).toBe(false)
   })
 
-  it('海克斯和普通大乱斗同英雄装备集并存，旧海克斯 UID 通过标题迁移', () => {
-    const aramContext = { ...context, position: 'none' as const, gameMode: 'ARAM', queueId: 450 }
-    const aram = createManagedItemSet(aramContext, recommendation({ modeLabel: '极地大乱斗' }))!
-    const kiwi = createManagedItemSet({ ...aramContext, gameMode: 'KIWI', queueId: 2400 }, recommendation({ modeLabel: '海克斯大乱斗' }))!
-    expect(aram.uid).not.toBe(kiwi.uid)
-    expect(planManagedItemSetUpsert([aram], [kiwi]).itemSets).toEqual([aram, kiwi])
-    const legacyKiwi = { ...kiwi, uid: aram.uid }
-    const migrated = planManagedItemSetUpsert([legacyKiwi], [kiwi])
-    expect(migrated.itemSets).toEqual([kiwi])
-    expect(migrated.changed).toBe(true)
-    expect(planManagedItemSetUpsert(migrated.itemSets, [aram]).itemSets).toEqual([kiwi, aram])
+  it.each(['KIWI', 'kiwi', 'ARAM', 'CHERRY', 'ARENA', 'URF', 'ARURF', 'NEXUSBLITZ', 'NEXUS_BLITZ'])(
+    '模式 %s 不再生成装备集', (gameMode) => {
+      expect(createManagedItemSet({ ...context, gameMode }, recommendation())).toBeNull()
+    },
+  )
+
+  it('仅关联峡谷地图，同步时保留已有的其他模式装备集', () => {
+    const ranked = createManagedItemSet(context, recommendation())!
+    const existingKiwi = { ...ranked, uid: 'sona-37-kiwi-none', title: '[Sona] 海克斯大乱斗', associatedMaps: [12] }
+    expect(ranked.associatedMaps).toEqual([11])
+    expect(planManagedItemSetUpsert([existingKiwi], [ranked]).itemSets).toEqual([existingKiwi, ranked])
   })
 })

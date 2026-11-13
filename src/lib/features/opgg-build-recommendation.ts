@@ -13,7 +13,9 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { Modal } from '@/components/ui/Modal'
-import { getQueue } from '@/lib/assets'
+import { getQueue, getQueueName } from '@/lib/assets'
+import { isSummonersRift, isSummonersRiftGameflow } from '@/lib/game-mode'
+import { isSummonersRiftChampSelect } from '@/lib/game-context'
 import { OpggBuildRecommendationPanel } from '@/components/ui/OpggBuildRecommendationPanel'
 import { lcu, LcuEventUri, type ChampSelectSession, type ItemSet, type LCUEventMessage, type RunePage, type RunePagePayload } from '@/lib/lcu'
 import { store } from '@/lib/store'
@@ -25,7 +27,7 @@ import {
 } from '@/lib/opgg-api'
 import type { GameflowPhase } from '@/types/lcu'
 import type { BuildRecommendation, RecommendationContext } from '@/types/build-recommendation'
-import { FALLBACK_OPGG_POSITION, getChampionName, getPositionLabel, getModeLabel, isKiwiMode, resolveOpggMode, resolveRecommendationPosition } from '@/lib/build-recommendation/context'
+import { FALLBACK_OPGG_POSITION, getChampionName, getPositionLabel, resolveRecommendationPosition } from '@/lib/build-recommendation/context'
 import { loadRecommendation } from '@/lib/build-recommendation/data'
 import { createManagedItemSet, getManagedItemSetUid, planManagedItemSetUpsert } from '@/lib/build-recommendation/item-sets'
 
@@ -96,6 +98,7 @@ let championLockPollTimer: number | null = null
 let championLockPollAttempts = 0
 let injectRegistered = false
 let inGameBuildButtonRegistered = false
+let inGameBuildButtonToken = 0
 let currentContext: RecommendationContext = {
   championId: 0,
   queueId: 0,
@@ -154,9 +157,7 @@ function isLocalChampionLocked(session: ChampSelectSession): boolean {
     return true
   }
 
-  // ARAM/KIWI can swap champions after the pick action is completed. In that case
-  // the completed action may still point to the originally locked champion, while
-  // localPlayer.championId has already changed to the swapped champion.
+  // A completed pick action can still reference the original champion after a swap.
   return localPickActions.some((action) => action.completed)
 }
 
@@ -199,7 +200,6 @@ function ensureCommonPositionMap(tier: OpggTier): Promise<Map<number, OpggPositi
   if (cached) return cached
 
   const promise = opggApi.getChampionsTier({
-    mode: 'ranked',
     tier,
   }).then((summary) => {
     const positionsByChampion = new Map<number, OpggPosition>()
@@ -246,6 +246,7 @@ async function resolveInitialRecommendationPosition(options: {
   championId: number
   queueId: number
   gameMode: string
+  mapId?: number
   assignedPosition: OpggPosition
 }): Promise<OpggPosition> {
   const probeContext: RecommendationContext = {
@@ -253,10 +254,11 @@ async function resolveInitialRecommendationPosition(options: {
     queueId: options.queueId,
     gameVersion: '',
     gameMode: options.gameMode,
+    mapId: options.mapId,
     position: options.assignedPosition,
   }
 
-  if (resolveOpggMode(probeContext) !== 'ranked') return 'none'
+  if (!isSummonersRift(probeContext)) return 'none'
 
   if (isRankedQueue(options.queueId) && options.assignedPosition !== 'none') {
     logger.info('[OPGG] 推荐分路使用排位分配位置 → %s', options.assignedPosition)
@@ -279,29 +281,29 @@ async function resolveInitialRecommendationPosition(options: {
   return FALLBACK_OPGG_POSITION
 }
 
-async function resolveGameMode(queueId: number): Promise<string> {
-  const queueMode = getQueue(queueId)?.gameMode
-  if (queueMode) return queueMode
-
+async function resolveGameContext(queueId: number): Promise<{ gameMode: string; mapId?: number }> {
+  const queue = getQueue(queueId)
+  if (queue) return { gameMode: queue.gameMode, mapId: queue.mapId }
   const session = await lcu.getGameflowSession().catch(() => null)
-  return session?.gameData?.queue?.gameMode || session?.map?.gameMode || ''
+  if (session?.gameData?.queue?.id !== queueId) return { gameMode: '' }
+  return {
+    gameMode: session?.gameData?.queue?.gameMode || session?.map?.gameMode || '',
+    mapId: session?.map?.id ?? session?.gameData?.queue?.mapId,
+  }
 }
 
 /** 匹配/排位（opgg ranked）且识别不到分路时，需要展开五路分别写入 */
 function shouldExpandAllPositions(context: RecommendationContext): boolean {
-  return resolveOpggMode(context) === 'ranked' && context.position === 'none'
+  return isSummonersRift(context) && context.position === 'none'
 }
 
 function getRecommendationCacheKey(context: RecommendationContext): string {
-  const mode = resolveOpggMode(context)
-  const position = resolveRecommendationPosition(mode, context.position)
-  const tier = getEffectiveOpggTier(context)
+  const position = resolveRecommendationPosition(context.position)
+  const tier = getSelectedOpggTier()
 
   return [
     context.championId,
     context.queueId,
-    context.gameMode || 'unknown',
-    mode,
     position,
     tier,
     'latest',
@@ -316,35 +318,14 @@ function getSelectedOpggTier(): OpggTier {
   return normalizeOpggTier(store.get('opggBuildRecommendationTier'))
 }
 
-function getEffectiveOpggTier(context: RecommendationContext): OpggTier {
-  if (isKiwiMode(context)) return 'all'
-  return resolveOpggMode(context) === 'arena' ? 'all' : getSelectedOpggTier()
-}
-
-function getSmartRuneModeKey(context: RecommendationContext): string | null {
-  const rawMode = context.gameMode.toLowerCase()
-  const opggMode = resolveOpggMode(context)
-  if (rawMode === 'kiwi' || opggMode === 'arena') return null
-  return opggMode
-}
-
 function getSmartRuneKey(context: RecommendationContext): string | null {
-  const modeKey = getSmartRuneModeKey(context)
-  if (!modeKey || context.championId <= 0) return null
-  return `${context.championId}:${modeKey}`
-}
-
-function getSmartSpellModeKey(context: RecommendationContext): string | null {
-  const rawMode = context.gameMode.toLowerCase()
-  if (rawMode === 'kiwi') return 'kiwi'
-
-  return resolveOpggMode(context)
+  if (!isSummonersRift(context) || context.championId <= 0) return null
+  return `${context.championId}:ranked`
 }
 
 function getSmartSpellKey(context: RecommendationContext): string | null {
-  const modeKey = getSmartSpellModeKey(context)
-  if (!modeKey || context.championId <= 0) return null
-  return `${context.championId}:${modeKey}`
+  if (!isSummonersRift(context) || context.championId <= 0) return null
+  return `${context.championId}:ranked`
 }
 
 function isValidRunePage(page: Pick<RunePagePayload, 'primaryStyleId' | 'subStyleId' | 'selectedPerkIds'>): boolean {
@@ -379,8 +360,8 @@ function notifySmartRuneSaved(context: RecommendationContext, runeKey: string, s
   lastRuneSaveChatAt = now
 
   const championName = getChampionName(context.championId)
-  const modeLabel = getContextModeLabel(context)
-  Toast.success(`${championName} ${modeLabel} 符文更改已保存 - Sona`)
+  const queueLabel = getContextQueueLabel(context)
+  Toast.success(`${championName} ${queueLabel} 符文更改已保存 - Sona`)
 }
 
 function rememberSmartRuneSnapshot(runeKey: string, page: SmartRuneSnapshot): void {
@@ -402,7 +383,7 @@ function rememberSmartSpellSnapshot(spellKey: string, spells: SmartSpellSnapshot
 }
 
 /**
- * 首次游玩某个“英雄 + 模式”时保存最终符文。
+ * 首次游玩某个英雄时保存最终符文。
  * 已存在有效记录时保持原有的“检测到用户变化才更新”策略，避免覆盖自动恢复内容。
  */
 function persistMissingSmartRuneSnapshot(
@@ -438,7 +419,7 @@ function persistMissingSmartRuneSnapshot(
   return true
 }
 
-/** 首次游玩某个“英雄 + 模式”时保存最终召唤师技能。 */
+/** 首次游玩某个英雄时保存最终召唤师技能。 */
 function persistMissingSmartSpellSnapshot(
   context: RecommendationContext,
   spells: SmartSpellSnapshot,
@@ -567,7 +548,7 @@ async function persistFinalSmartLoadoutSnapshot(
 }
 
 function ensureRecommendationPrefetch(context: RecommendationContext): RecommendationCacheEntry | null {
-  if (context.championId <= 0) return null
+  if (context.championId <= 0 || !isSummonersRift(context)) return null
 
   const snapshot = { ...context }
   const key = getRecommendationCacheKey(snapshot)
@@ -581,7 +562,7 @@ function ensureRecommendationPrefetch(context: RecommendationContext): Recommend
     promise: Promise.resolve(null),
   }
 
-  entry.promise = loadRecommendation(snapshot, getEffectiveOpggTier(snapshot))
+  entry.promise = loadRecommendation(snapshot, getSelectedOpggTier())
     .then((data) => {
       entry.data = data
       entry.updatedAt = Date.now()
@@ -612,20 +593,21 @@ function trimRecommendationCache() {
   }
 }
 
-function getContextModeLabel(context: RecommendationContext): string {
-  const modeLabel = getModeLabel(resolveOpggMode(context), context)
+function getContextQueueLabel(context: RecommendationContext): string {
+  const queueName = getQueueName(context.queueId)
   const positionLabel = getPositionLabel(context.position)
-  return positionLabel ? `${modeLabel}/${positionLabel}` : modeLabel
+  return positionLabel ? `${queueName}/${positionLabel}` : queueName
 }
 
 function getSmartRunePageName(context: RecommendationContext): string {
-  return `${getChampionName(context.championId)} ${getModeLabel(resolveOpggMode(context), context)} - Sona`
+  return `${getChampionName(context.championId)} ${getQueueName(context.queueId)} - Sona`
 }
 
 function isCurrentRecommendationContext(context: RecommendationContext): boolean {
   return currentContext.championId === context.championId
     && currentContext.queueId === context.queueId
     && currentContext.gameMode === context.gameMode
+    && currentContext.mapId === context.mapId
     && currentContext.position === context.position
 }
 
@@ -729,7 +711,7 @@ async function pollCurrentRunePage(): Promise<void> {
     const signature = getRunePageSignature(active)
     rememberSmartRuneSnapshot(runeKey, active)
 
-    // 首次观察到该英雄/模式的符文页时，仅记录基线，不触发保存。
+    // 首次观察到该英雄的符文页时，仅记录基线，不触发保存。
     // 否则锁定瞬间（Sona 自动恢复完成之前）轮询会把“恢复前的旧符文页”
     // 误判为变化并覆盖掉用户已保存的智能符文。
     if (runeKey !== lastPolledRuneKey) {
@@ -959,11 +941,11 @@ async function applySavedSmartLoadout(context: RecommendationContext): Promise<v
   if (!runeRestored && !spellsRestored) return
 
   const championName = getChampionName(context.championId)
-  const modeLabel = getContextModeLabel(context)
+  const queueLabel = getContextQueueLabel(context)
   let restoredText = runeRestored ? '符文' : '召唤师技能'
   if (runeRestored && spellsRestored) restoredText = '符文 & 召唤师技能'
 
-  Toast.success(`${championName} ${modeLabel} ${restoredText}已恢复 - Sona`)
+  Toast.success(`${championName} ${queueLabel} ${restoredText}已恢复 - Sona`)
 }
 
 function syncSavedSmartLoadoutWhenReady(context: RecommendationContext): void {
@@ -1010,6 +992,10 @@ function scheduleRefreshWhenChampionLocked(delay = 250) {
       }
 
       const session = await lcu.getChampSelectSession()
+      if (!await isSummonersRiftChampSelect(session)) {
+        unmount()
+        return
+      }
       if (isLocalChampionLocked(session)) {
         stopChampionLockPolling()
         await refreshContext(session)
@@ -1035,12 +1021,13 @@ async function refreshContext(session?: ChampSelectSession) {
     const localPlayer = getLocalPlayer(currentSession)
     const queueId = currentSession.queueId ?? 0
     const championId = localPlayer?.championId ?? getLocalChampionId(currentSession)
-    const gameMode = await resolveGameMode(queueId)
+    const { gameMode, mapId } = await resolveGameContext(queueId)
     const assignedPosition = mapAssignedPosition(localPlayer?.assignedPosition)
     const position = await resolveInitialRecommendationPosition({
       championId,
       queueId,
       gameMode,
+      mapId,
       assignedPosition,
     })
     if (refreshToken !== contextRefreshToken) return
@@ -1051,7 +1038,13 @@ async function refreshContext(session?: ChampSelectSession) {
       queueId,
       gameVersion: currentContext.gameVersion,
       gameMode,
+      mapId,
       position,
+    }
+
+    if (!isSummonersRift(currentContext)) {
+      unmount(false)
+      return
     }
 
     if (localPlayer) {
@@ -1246,11 +1239,13 @@ async function resolveInGameRecommendationContext(): Promise<RecommendationConte
 
   const queueId = session.gameData?.queue?.id ?? currentContext.queueId
   const gameMode = session.gameData?.queue?.gameMode || session.map?.gameMode || currentContext.gameMode
+  const mapId = session.map?.id ?? session.gameData?.queue?.mapId
   const assignedPosition = mapAssignedPosition(player?.selectedPosition || player?.selectedRole || currentContext.position)
   const position = await resolveInitialRecommendationPosition({
     championId,
     queueId,
     gameMode,
+    mapId,
     assignedPosition,
   })
 
@@ -1259,12 +1254,14 @@ async function resolveInGameRecommendationContext(): Promise<RecommendationConte
     queueId,
     gameVersion: currentContext.gameVersion || await lcu.getGameVersion().catch(() => ''),
     gameMode,
+    mapId,
     position,
   }
 }
 
 export async function showOpggBuildRecommendationModal() {
   const context = await resolveInGameRecommendationContext()
+  if (!isSummonersRift(context)) return
   currentContext = { ...context }
   const cacheEntry = ensureRecommendationPrefetch(context)
   const token = ++inGameModalRenderToken
@@ -1281,6 +1278,7 @@ async function openRecommendationPanel(anchor: HTMLElement, contextOverride?: Re
   }
 
   const context = contextOverride ? { ...contextOverride } : { ...currentContext }
+  if (!isSummonersRift(context)) return
   const cacheEntry = ensureRecommendationPrefetch(context)
   const recommendation = cacheEntry?.data ?? null
   const loadError = cacheEntry?.error ?? ''
@@ -1421,9 +1419,10 @@ export async function openOpggBuildRecommendationDebugPanel(
   const gameVersion = await lcu.getGameVersion().catch(() => currentContext.gameVersion)
   await openRecommendationPanel(anchor, {
     championId,
-    queueId: contextOverride.queueId ?? 3100,
+    queueId: contextOverride.queueId ?? 420,
     gameVersion,
-    gameMode: contextOverride.gameMode ?? 'KIWI',
+    gameMode: contextOverride.gameMode ?? 'CLASSIC',
+    mapId: contextOverride.mapId ?? 11,
     position: contextOverride.position ?? 'none',
   })
 }
@@ -1453,6 +1452,7 @@ function renderRecommendationPanel(
 }
 
 function tryHijackAbilityPreviewPanel(): boolean {
+  if (!isSummonersRift(currentContext)) return false
   const targets = document.querySelectorAll(`${TARGET_SELECTOR}:not([${HIJACK_ATTR}])`)
   if (targets.length === 0) {
     logger.info('[OPGG] 未找到技能预览面板元素')
@@ -1521,11 +1521,17 @@ function tryInjectInGameBuildButton(): boolean {
 function registerInGameBuildButton() {
   if (inGameBuildButtonRegistered) return
 
-  injector.register(tryInjectInGameBuildButton)
-  inGameBuildButtonRegistered = true
+  const token = ++inGameBuildButtonToken
+  lcu.getGameflowSession().then((session) => {
+    if (token !== inGameBuildButtonToken) return
+    if (!isSummonersRiftGameflow(session) || inGameBuildButtonRegistered) return
+    injector.register(tryInjectInGameBuildButton)
+    inGameBuildButtonRegistered = true
+  }).catch(() => { /* ignore */ })
 }
 
 function unregisterInGameBuildButton() {
+  inGameBuildButtonToken += 1
   if (inGameBuildButtonRegistered) {
     injector.unregister(tryInjectInGameBuildButton)
     inGameBuildButtonRegistered = false
