@@ -36,5 +36,6 @@
 
 - 仅修改技能或文档时，检查内容、引用路径和 diff 即可，不为此安装前端依赖或启动 LOL。
 - 修改源码后运行适用的类型检查；有现成依赖时可运行 `npx --no-install tsc --noEmit`。`npm test` 会检查源码和测试的类型，并通过独立 Vitest 配置运行回归测试；目前没有配置 lint 脚本，不声称 lint 已通过。
-- 运行 `npm run build` 前检查 `package.json` 的 `config.loaderPath` 和 `vite.config.ts`：现有构建插件会复制产物，并可能删除重建目标插件目录。先确认解析后的绝对路径在预期位置，避免覆盖用户安装或仓库外目录。
+- `npm run typecheck` 检查浏览器源码和 Node 构建配置；`npm run build` 只生成 `dist/`。源码、构建配置和测试使用独立增量缓存，位于 `node_modules/.cache/tsc/`。
+- 运行 `npm run dev` 或 `npm run build:install` 前检查 `PENGU_LOADER_PATH`、`package.json` 的 `config.loaderPath` 和 `vite.config.ts`：这些命令会写入目标插件目录。先确认解析后的绝对路径在预期位置；安装只覆盖产物文件，保留其他用户资源。
 - 沿用原项目许可与署名；第三方技能的来源、固定版本和许可见 [.agents/skills/README.md](.agents/skills/README.md)。

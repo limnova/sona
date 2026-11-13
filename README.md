@@ -34,19 +34,22 @@
 
 ## 开发
 
-环境：React 19、TypeScript 5.8、Vite 6，运行宿主为 LOL 客户端的 Pengu Loader。
+环境：React 19、TypeScript 5、Vite 6，运行宿主为 LOL 客户端的 Pengu Loader。
 
 ```powershell
 npm ci
-npx --no-install tsc --noEmit
+npm run typecheck
 npm test
+npm run build
 ```
 
-`npm test` 对源码和测试进行类型检查，再运行峡谷功能入口、队列筛选、战力评分、战绩请求竞态、分页及配装数据转换和装备集合并的回归测试。测试使用独立的 `vitest.config.ts`，不会加载 Pengu 构建插件或修改安装目录。
+`npm test` 对源码和测试进行类型检查，再运行峡谷功能入口、队列筛选、战力评分、战绩请求竞态、分页及配装数据转换和装备集合并的回归测试。测试使用独立的 `vitest.config.ts`；构建回归测试只在临时目录中验证打包、安装和失败保护，不会修改实际安装目录。
+
+`npm run typecheck` 分别检查浏览器源码和 Node 构建配置；源码、构建配置和测试的增量缓存分别保存在 `node_modules/.cache/tsc/`。`npm run build` 先检查类型，再生成 `dist/`，不会安装到 Pengu 目录。已经完成类型检查时，可用 `npm run build:bundle` 单独打包；发布 CI 会先运行测试，再使用完整构建命令。
 
 配装的数据模型位于 `src/types/build-recommendation.ts`；分路上下文、OP.GG 数据适配与装备集逻辑位于 `src/lib/build-recommendation/`，宿主事件和界面控制仍由 `src/lib/features/opgg-build-recommendation.ts` 负责。战绩列表行与分页会话位于 `src/components/ui/match-history/`。
 
-`npm run dev` 和 `npm run build` 会按 `package.json` 的 `config.loaderPath` 写入目标插件目录。**构建会删除重建目标插件目录**，运行前请核对其绝对路径及 `vite.config.ts`，避免覆盖其他安装。默认 `../../` 解析到仓库外。
+`npm run dev` 写入开发入口；`npm run build:install` 在类型检查和打包成功后更新已安装插件，并保留目录中的自定义资源。两者优先读取 `PENGU_LOADER_PATH` 环境变量，否则使用 `package.json` 的 `config.loaderPath`；相对路径以项目根目录为基准，最终目录为 `<loaderPath>/plugins/sona`。默认 `../../` 解析到仓库外，使用前请核对目标路径。例如 PowerShell 中先设置 `$env:PENGU_LOADER_PATH = 'D:\Pengu'`，再运行 `npm run build:install`。
 
 战绩优先走 SGP，失败时回退客户端原生接口；接口、网络或区服状态可能导致无数据。`/lol-chat/v1/me` 仅以 GET 读取区服标识，供战绩路由使用。配装依赖 OP.GG 外部数据源；OP.GG 全球统计仅用于英雄配装参考。
 

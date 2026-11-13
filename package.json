@@ -11,7 +11,10 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "build": "npm run typecheck && vite build",
+    "build:bundle": "vite build",
+    "build:install": "npm run typecheck && vite build --mode install",
     "preview": "vite preview",
     "test": "tsc --noEmit -p tsconfig.test.json && vitest run --config vitest.config.ts"
   },
