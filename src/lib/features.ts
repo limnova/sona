@@ -14,7 +14,7 @@ import { isSummonersRiftChampSelect } from '@/lib/game-context'
 import { updateLobbyMemberMatchHistory } from '@/lib/features/lobby-member-match-history'
 import { updateGameAnalysisPopup } from '@/lib/features/game-analysis-popup'
 import { updateOpggBuildRecommendation } from '@/lib/features/opgg-build-recommendation'
-import { preloadChampSelectTierBadgeData, updateChampSelectTierBadge } from '@/lib/features/champselect-tier-badge'
+import { updateChampSelectTierBadge } from '@/lib/features/champselect-tier-badge'
 import {
   calculateSonaPlayerStrengthScore,
   filterSonaStrengthGamesByQueue,
@@ -904,8 +904,6 @@ function refreshChampSelectStats() {
 }
 
 export function initFeatures() {
-  preloadChampSelectTierBadgeData()
-
   refreshChampSelectStats()
   store.onChange('champSelectAssist', refreshChampSelectStats)
   store.onChange('analyzeTeamPower', refreshChampSelectStats)

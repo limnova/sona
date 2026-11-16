@@ -15,8 +15,6 @@ import type {
   GameflowPhase,
   GameflowSession,
   ChampSelectSession,
-  ChampSelectPlayerDetail,
-  QueueId,
   LCUEventMessage,
   MatchHistoryResponse,
   MatchDetail,
@@ -27,19 +25,17 @@ import type {
   SummonerSpellData,
   ChampionSummaryData,
   GameQueue,
-  ChampSelectSummoner,
 } from '@/types/lcu'
 import { SGP_SERVERS, TENCENT_MATCH_HISTORY_INTEROP } from '@/types/sgp'
 import type { SgpEntitlementsToken, SgpGameSummaryLol, SgpMatchHistoryLol, SgpParticipantLol, SgpPerks, SgpTeam } from '@/types/sgp'
-import { deobfuscateChampSelectPuuid } from '@/lib/champ-select-puuid'
 
 
 // Re-export types for convenience
-export type { SummonerInfo, Lobby, GameflowPhase, GameflowSession, LCUEventMessage, ChampSelectSession, ChampSelectPlayerDetail, MatchHistoryResponse, MatchDetail, ChampSelectSummoner }
+export type { SummonerInfo, Lobby, GameflowPhase, GameflowSession, LCUEventMessage, ChampSelectSession, MatchHistoryResponse, MatchDetail }
 export type { SgpEntitlementsToken, SgpMatchHistoryLol } from '@/types/sgp'
 export { SGP_SERVERS, TENCENT_MATCH_HISTORY_INTEROP, TENCENT_SERVER_NAMES, queueIdToTag } from '@/types/sgp'
 
-export { LcuEventUri, QueueId } from '@/types/lcu'
+export { LcuEventUri } from '@/types/lcu'
 
 /** SGP summoner-ledge 按名查询返回的关键字段（仅取解析所需，容错处理） */
 interface SgpSummonerLite {
@@ -77,21 +73,23 @@ async function request<T = unknown>(endpoint: string, options: RequestInit = {})
   return text ? (JSON.parse(text) as T) : (undefined as unknown as T)
 }
 
-function get<T = unknown>(endpoint: string): Promise<T> {
-  return request<T>(endpoint, { method: 'GET' })
+function get<T = unknown>(endpoint: string, signal?: AbortSignal): Promise<T> {
+  return request<T>(endpoint, { method: 'GET', signal })
 }
 
-function post<T = unknown>(endpoint: string, body?: unknown): Promise<T> {
+function post<T = unknown>(endpoint: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   return request<T>(endpoint, {
     method: 'POST',
     body: body != null ? JSON.stringify(body) : undefined,
+    signal,
   })
 }
 
-function put<T = unknown>(endpoint: string, body?: unknown): Promise<T> {
+function put<T = unknown>(endpoint: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   return request<T>(endpoint, {
     method: 'PUT',
     body: body != null ? JSON.stringify(body) : undefined,
+    signal,
   })
 }
 
@@ -141,14 +139,15 @@ export interface ItemSetWrapper {
   timestamp: number
 }
 
-function del<T = unknown>(endpoint: string): Promise<T> {
-  return request<T>(endpoint, { method: 'DELETE' })
+function del<T = unknown>(endpoint: string, signal?: AbortSignal): Promise<T> {
+  return request<T>(endpoint, { method: 'DELETE', signal })
 }
 
-function patch<T = unknown>(endpoint: string, body?: unknown): Promise<T> {
+function patch<T = unknown>(endpoint: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   return request<T>(endpoint, {
     method: 'PATCH',
     body: body != null ? JSON.stringify(body) : undefined,
+    signal,
   })
 }
 
@@ -196,28 +195,6 @@ class LCUManager {
    */
   private _entitlementsToken: SgpEntitlementsToken | null = null
 
-  /**
-   * League Session Token 缓存
-   *
-   * 通过 WS 事件 `/lol-league-session/v1/league-session-token` 自动保活。
-   */
-  private _leagueSessionToken: string | null = null
-
-  /** SGP Token 是否已就绪（两个 token 都已拿到） */
-  get isSgpTokenReady(): boolean {
-    return this._entitlementsToken !== null && this._leagueSessionToken !== null
-  }
-
-  /** 获取缓存的 Entitlements Token（不会发起网络请求） */
-  get cachedEntitlementsToken(): SgpEntitlementsToken | null {
-    return this._entitlementsToken
-  }
-
-  /** 获取缓存的 League Session Token（不会发起网络请求） */
-  get cachedLeagueSessionToken(): string | null {
-    return this._leagueSessionToken
-  }
-
 
   // -------------------- 初始化 --------------------
 
@@ -240,93 +217,23 @@ class LCUManager {
     this._initSgpTokenKeepAlive()
   }
 
-  /**
-   * SGP Token 保活机制
-   *
-   * 参考 LeagueAkari 的 _maintainEntitlementsToken / _maintainLeagueSessionToken 实现。
-   *
-   * 策略：
-   * 1. 启动时主动拉取一次 token 填充缓存
-   * 2. 监听 LCU WebSocket 事件，token 变化时自动更新缓存
-   *    - `/entitlements/v1/token` → Entitlements Token
-   *    - `/lol-league-session/v1/league-session-token` → League Session Token
-   * 3. LCU 会在 token 即将过期时主动推送新 token，无需自己算过期时间
-   */
+  /** 仅维护战绩和国服跨区查询实际使用的 Entitlements Token。 */
   private _initSgpTokenKeepAlive() {
-    // 1. 主动拉取初始 token
-    this._fetchInitialTokens()
-
-    // 2. 监听 WS 事件保活
+    void this.getEntitlementsToken().then((token) => {
+      this._entitlementsToken = token
+    }).catch((error) => {
+      console.warn('[LCUManager] 初始拉取 Entitlements Token 失败:', error)
+    })
     this.observe('/entitlements/v1/token', (event) => {
-      const token = event.data as SgpEntitlementsToken | null
-      if (token) {
-        this._entitlementsToken = token
-        console.log('[LCUManager] Entitlements Token 已通过 WS 事件更新')
-      } else {
-        this._entitlementsToken = null
-        console.log('[LCUManager] Entitlements Token 已清空（WS 事件）')
-      }
-    })
-
-    this.observe('/lol-league-session/v1/league-session-token', (event) => {
-      const token = event.data as string | null
-      if (token) {
-        this._leagueSessionToken = token
-        console.log('[LCUManager] League Session Token 已通过 WS 事件更新')
-      } else {
-        this._leagueSessionToken = null
-        console.log('[LCUManager] League Session Token 已清空（WS 事件）')
-      }
+      this._entitlementsToken = event.data as SgpEntitlementsToken | null
     })
   }
-
-  /** 主动拉取初始 token 填充缓存 */
-  private async _fetchInitialTokens() {
-    try {
-      const [entToken, sessionToken] = await Promise.all([
-        this.getEntitlementsToken().catch((e) => {
-          console.warn('[LCUManager] 初始拉取 Entitlements Token 失败:', e)
-          return null
-        }),
-        this.getLeagueSessionToken().catch((e) => {
-          console.warn('[LCUManager] 初始拉取 League Session Token 失败:', e)
-          return null
-        }),
-      ])
-      if (entToken) {
-        this._entitlementsToken = entToken
-        console.log('[LCUManager] 初始 Entitlements Token 已获取')
-      }
-      if (sessionToken) {
-        this._leagueSessionToken = sessionToken
-        console.log('[LCUManager] 初始 League Session Token 已获取')
-      }
-    } catch (error) {
-      console.warn('[LCUManager] 初始拉取 SGP Token 异常:', error)
-    }
-  }
-
-
-  // -------------------- 底层请求 (公开) --------------------
-
-  /** 通用 REST 请求 */
-  request = request
-  get = get
-  post = post
-  put = put
-  patch = patch
-  delete = del
 
   // ==================== 召唤师 ====================
 
   /** 获取当前登录的召唤师信息 */
   getSummonerInfo(): Promise<SummonerInfo> {
     return get<SummonerInfo>('/lol-summoner/v1/current-summoner')
-  }
-
-  /** 通过 summoner ID 获取召唤师信息 */
-  getSummonerById(summonerId: number): Promise<SummonerInfo> {
-    return get<SummonerInfo>(`/lol-summoner/v1/summoners/${summonerId}`)
   }
 
   /** 通过 puuid 获取召唤师信息 */
@@ -451,19 +358,13 @@ class LCUManager {
   }
 
   /** 获取指定召唤师的客户端装备集 wrapper */
-  getItemSets(summonerId: number): Promise<ItemSetWrapper> {
-    return get<ItemSetWrapper>(`/lol-item-sets/v1/item-sets/${summonerId}/sets`)
+  getItemSets(summonerId: number, signal?: AbortSignal): Promise<ItemSetWrapper> {
+    return get<ItemSetWrapper>(`/lol-item-sets/v1/item-sets/${summonerId}/sets`, signal)
   }
 
   /** 覆盖写入指定召唤师的客户端装备集 wrapper */
-  putItemSets(summonerId: number, wrapper: ItemSetWrapper): Promise<ItemSetWrapper> {
-    return put<ItemSetWrapper>(`/lol-item-sets/v1/item-sets/${summonerId}/sets`, wrapper)
-  }
-
-
-  /** 获取当前玩家的排位数据 */
-  getCurrentRankedStats(): Promise<unknown> {
-    return get('/lol-ranked/v1/current-ranked-stats')
+  putItemSets(summonerId: number, wrapper: ItemSetWrapper, signal?: AbortSignal): Promise<ItemSetWrapper> {
+    return put<ItemSetWrapper>(`/lol-item-sets/v1/item-sets/${summonerId}/sets`, wrapper, signal)
   }
 
   /** 通过 puuid 获取排位数据 */
@@ -497,77 +398,12 @@ class LCUManager {
     return get<ChampSelectSession>('/lol-champ-select/v1/session')
   }
 
-  /** 获取英雄选择阶段指定格子的召唤师状态 */
-  getChampSelectSummoner(cellId: number): Promise<ChampSelectSummoner> {
-    return get<ChampSelectSummoner>(`/lol-champ-select/v1/summoners/${cellId}`)
-  }
-
   /**
    * 应用推荐的召唤师技能
    * @param selection 选择参数
    */
-  updateMySelection(selection: { spell1Id?: number; spell2Id?: number }): Promise<unknown> {
-    return patch('/lol-champ-select/v1/session/my-selection', selection)
-  }
-
-  /**
-   * 获取本局选人阶段所有玩家的详细信息
-   * 包含召唤师信息、排位数据、近期战绩
-   * @returns 我方和敌方玩家信息数组
-   */
-  async getChampSelectPlayers(): Promise<{
-    myTeam: ChampSelectPlayerDetail[]
-    theirTeam: ChampSelectPlayerDetail[]
-  }> {
-    const session = await this.getChampSelectSession()
-
-    const fetchDetail = async (player: ChampSelectSession['myTeam'][number]): Promise<ChampSelectPlayerDetail> => {
-      const resolvedPuuid = player.puuid
-        || (player.nameVisibilityType === 'HIDDEN'
-          ? deobfuscateChampSelectPuuid(player.obfuscatedPuuid)
-          : '')
-      try {
-        const summoner = resolvedPuuid
-          ? await this.getSummonerByPuuid(resolvedPuuid)
-          : await this.getSummonerById(player.summonerId)
-        const [ranked, matchHistory] = await Promise.all([
-          this.getRankedStats(summoner.puuid).catch(() => null),
-          this.getMatchHistory(summoner.puuid, 0, 19).catch(() => null),
-        ])
-        return {
-          summonerId: player.summonerId || summoner.summonerId,
-          championId: player.championId,
-          assignedPosition: player.assignedPosition,
-          gameName: summoner.gameName,
-          tagLine: summoner.tagLine,
-          summonerLevel: summoner.summonerLevel,
-          puuid: summoner.puuid,
-          profileIconId: summoner.profileIconId,
-          ranked,
-          recentMatches: matchHistory,
-        }
-      } catch {
-        return {
-          summonerId: player.summonerId,
-          championId: player.championId,
-          assignedPosition: player.assignedPosition,
-          gameName: player.gameName || 'Unknown',
-          tagLine: player.tagLine,
-          summonerLevel: 0,
-          puuid: resolvedPuuid,
-          profileIconId: 0,
-          ranked: null,
-          recentMatches: null,
-        }
-      }
-    }
-
-    const [myTeam, theirTeam] = await Promise.all([
-      Promise.all(session.myTeam.map(fetchDetail)),
-      Promise.all(session.theirTeam.map(fetchDetail)),
-    ])
-
-    return { myTeam, theirTeam }
+  updateMySelection(selection: { spell1Id?: number; spell2Id?: number }, signal?: AbortSignal): Promise<unknown> {
+    return patch('/lol-champ-select/v1/session/my-selection', selection, signal)
   }
 
   // ==================== 队列信息 ====================
@@ -575,21 +411,6 @@ class LCUManager {
   /** 获取所有可用队列（含中文名、游戏模式、地图等） */
   getQueues(): Promise<GameQueue[]> {
     return get<GameQueue[]>('/lol-game-queues/v1/queues')
-  }
-
-  /** 获取当前游戏模式信息 */
-  getCurrentGamemode(): Promise<unknown> {
-    return get('/lol-lobby/v1/parties/gamemode')
-  }
-
-  /** 获取所有游戏模式 */
-  getGameModes(): Promise<unknown[]> {
-    return get<unknown[]>('/lol-game-queues/v1/game-type-config')
-  }
-
-  /** 获取所有地图信息 */
-  getMaps(): Promise<unknown[]> {
-    return get<unknown[]>('/lol-maps/v1/maps')
   }
 
   // ==================== 战绩 ====================
@@ -615,19 +436,6 @@ class LCUManager {
     return get<MatchDetail>(`/lol-match-history/v1/games/${gameId}`)
   }
 
-  /**
-   * 获取单局时间线数据
-   * @param gameId 对局 ID
-   */
-  getMatchTimeline(gameId: number): Promise<unknown> {
-    return get(`/lol-match-history/v1/game-timelines/${gameId}`)
-  }
-
-  /** 获取最近一起玩过的召唤师 */
-  getRecentlyPlayedSummoners(): Promise<unknown> {
-    return get('/lol-match-history/v1/recently-played-summoners')
-  }
-
   // ==================== SGP Token ====================
 
   /**
@@ -645,15 +453,6 @@ class LCUManager {
    */
   getEntitlementsToken(): Promise<SgpEntitlementsToken> {
     return get('/entitlements/v1/token')
-  }
-
-  /**
-   * 获取 League Session Token（SGP 通用查询所需）
-   *
-   * 返回纯 JWT 字符串，用于 `Authorization: Bearer {token}` 请求 SGP 通用接口（召唤师/排位等）。
-   */
-  getLeagueSessionToken(): Promise<string> {
-    return get('/lol-league-session/v1/league-session-token')
   }
 
   /** 优先读取客户端 platformId，失败时从国服 Token issuer 解析大区。 */
@@ -1108,62 +907,69 @@ class LCUManager {
   }
 
   /** 获取玩家符文页 */
-  getRunePages(): Promise<RunePage[]> {
-    return get<RunePage[]>('/lol-perks/v1/pages')
+  getRunePages(signal?: AbortSignal): Promise<RunePage[]> {
+    return get<RunePage[]>('/lol-perks/v1/pages', signal)
   }
 
   /** 创建符文页 */
-  createRunePage(page: RunePagePayload): Promise<RunePage> {
-    return post<RunePage>('/lol-perks/v1/pages', page)
+  createRunePage(page: RunePagePayload, signal?: AbortSignal): Promise<RunePage> {
+    return post<RunePage>('/lol-perks/v1/pages', page, signal)
   }
 
   /** 更新指定符文页 */
-  updateRunePage(id: number, page: RunePagePayload): Promise<RunePage> {
-    return put<RunePage>(`/lol-perks/v1/pages/${id}`, page)
+  updateRunePage(id: number, page: RunePagePayload, signal?: AbortSignal): Promise<RunePage> {
+    return put<RunePage>(`/lol-perks/v1/pages/${id}`, page, signal)
   }
 
   /** 删除指定符文页 */
-  deleteRunePage(id: number): Promise<void> {
-    return del<void>(`/lol-perks/v1/pages/${id}`)
+  deleteRunePage(id: number, signal?: AbortSignal): Promise<void> {
+    return del<void>(`/lol-perks/v1/pages/${id}`, signal)
   }
 
   /** 创建或更新 Sona 管理的符文页，并设为当前使用页 */
-  async applyRunePage(page: Omit<RunePagePayload, 'current'>): Promise<RunePage> {
+  async applyRunePage(page: Omit<RunePagePayload, 'current'>, signal?: AbortSignal): Promise<RunePage> {
+    const ensureActive = () => {
+      if (signal?.aborted) throw new DOMException('符文应用已取消', 'AbortError')
+    }
+    ensureActive()
     const payload: RunePagePayload = {
       ...page,
       current: true,
     }
-    const pages = await this.getRunePages()
+    const pages = await this.getRunePages(signal)
+    ensureActive()
     const isEditable = (p: RunePage) => p.isEditable !== false
     const isSonaManaged = (p: RunePage) => /\s-\s*Sona$/i.test(p.name)
     const cleanupDuplicateSonaPages = async (keepId: number) => {
+      ensureActive()
       await Promise.allSettled(
         pages
           .filter((p) => p.id !== keepId && isSonaManaged(p) && p.isDeletable !== false)
-          .map((p) => this.deleteRunePage(p.id)),
+          .map((p) => this.deleteRunePage(p.id, signal)),
       )
     }
 
     const existing = pages.find((p) => p.name === page.name && p.isEditable !== false)
     if (existing) {
-      const updated = await this.updateRunePage(existing.id, payload)
+      const updated = await this.updateRunePage(existing.id, payload, signal)
       await cleanupDuplicateSonaPages(existing.id)
       return updated
     }
 
     const managed = pages.find((p) => isSonaManaged(p) && isEditable(p))
     if (managed) {
-      const updated = await this.updateRunePage(managed.id, payload)
+      const updated = await this.updateRunePage(managed.id, payload, signal)
       await cleanupDuplicateSonaPages(managed.id)
       return updated
     }
 
     try {
-      return await this.createRunePage(payload)
+      return await this.createRunePage(payload, signal)
     } catch (err) {
+      ensureActive()
       const fallback = pages.find((p) => p.current && p.isEditable !== false) ?? pages.find((p) => p.isEditable !== false)
       if (fallback) {
-        return this.updateRunePage(fallback.id, payload)
+        return this.updateRunePage(fallback.id, payload, signal)
       }
       throw err
     }
@@ -1255,19 +1061,6 @@ class LCUManager {
         this.eventListeners.delete(uri)
       }
     }
-  }
-
-
-  /**
-   * 断开所有 WebSocket 事件监听
-   * 应在插件卸载时调用
-   */
-  disconnect() {
-    if (this.penguContext) {
-      this.penguContext.socket.disconnect()
-    }
-    this.eventListeners.clear()
-    this.observedUris.clear()
   }
 
 }

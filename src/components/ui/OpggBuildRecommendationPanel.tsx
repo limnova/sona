@@ -56,6 +56,7 @@ function getOpggTierIcon(tier: OpggTier): string {
 }
 
 export interface OpggBuildRecommendationPanelProps {
+  signal?: AbortSignal
   context: RecommendationContext
   recommendation: BuildRecommendation | null
   loadError: string
@@ -103,6 +104,7 @@ function useFitTitleFontSize(
 }
 
 export function OpggBuildRecommendationPanel({
+  signal,
   context,
   recommendation,
   loadError,
@@ -152,7 +154,7 @@ export function OpggBuildRecommendationPanel({
       <main className="sobp-body">
         <div className="sobp-grid">
           <ItemSection title={'核心装备'} builds={recommendation?.coreItems} itemLimit={3} />
-          <RuneSection title={'符文搭配'} runes={recommendation?.runePages} championName={championName} queueName={queueText} />
+          <RuneSection title={'符文搭配'} runes={recommendation?.runePages} championName={championName} queueName={queueText} signal={signal} />
           <SpellSection title={'召唤师技能'} builds={recommendation?.summonerSpells} limit={MAX_RECOMMENDATION_ROWS} />
         </div>
 
@@ -479,7 +481,7 @@ function MatchupGroup({ title, items, tone }: { title: string; items: BuildRecom
   )
 }
 
-function RuneSection({ title, runes, championName, queueName }: { title: string; runes?: OpggRuneBuild[]; championName: string; queueName: string }) {
+function RuneSection({ title, runes, championName, queueName, signal }: { title: string; runes?: OpggRuneBuild[]; championName: string; queueName: string; signal?: AbortSignal }) {
   const visibleRunes = runes?.slice(0, MAX_RECOMMENDATION_ROWS) ?? []
   const maxRate = getMaxRunePickRate(visibleRunes, 0.15)
   const [applyingKey, setApplyingKey] = useState('')
@@ -503,11 +505,12 @@ function RuneSection({ title, runes, championName, queueName }: { title: string;
           ...rune.secondary_rune_ids,
           ...rune.stat_mod_ids,
         ],
-      })
+      }, signal)
+      if (signal?.aborted) return
       setAppliedKey(key)
       Toast.success(`${championName} ${queueName} 符文已应用 - Sona`)
     } catch {
-      setApplyErrorKey(key)
+      if (!signal?.aborted) setApplyErrorKey(key)
     } finally {
       setApplyingKey('')
     }

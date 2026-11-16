@@ -280,49 +280,6 @@ export interface ChampSelectTrade {
   state: 'INVALID' | 'AVAILABLE' | 'BUSY' | 'RECEIVED' | 'SENT' | (string & {})
 }
 
-/** 英雄选择阶段单个召唤师状态 — GET /lol-champ-select/v1/summoners/{cellId} */
-export interface ChampSelectSummoner {
-  actingBackgroundAnimationState: string
-  activeActionType: string
-  areSummonerActionsComplete: boolean
-  assignedPosition: string
-  banIntentSquarePortratPath: string
-  cellId: number
-  championIconStyle: string
-  championId: number
-  championName: string
-  currentChampionVotePercentInteger: number
-  isActingNow: boolean
-  isDonePicking: boolean
-  isOnPlayersTeam: boolean
-  isPickIntenting: boolean
-  isPlaceholder: boolean
-  isSelf: boolean
-  nameVisibilityType: 'HIDDEN' | 'PUBLIC' | (string & {})
-  obfuscatedPuuid: string
-  obfuscatedSummonerId: number
-  pickSnipedClass: string
-  puuid: string
-  shouldShowActingBar: boolean
-  shouldShowBanIntentIcon: boolean
-  shouldShowExpanded: boolean
-  shouldShowRingAnimations: boolean
-  shouldShowSelectedSkin: boolean
-  shouldShowSpells: boolean
-  showMuted: boolean
-  showSwaps: boolean
-  showTrades: boolean
-  skinId: number
-  skinSplashPath: string
-  slotId: number
-  spell1IconPath: string
-  spell2IconPath: string
-  statusMessageKey: string
-  summonerId: number
-  swapId: number
-  tradeId: number
-}
-
 /** 英雄选择操作 */
 export interface ChampSelectAction {
   actorCellId: number
@@ -401,34 +358,6 @@ export interface ChampSelectPlayer {
   team: 1 | 2 | number
   /** 守卫皮肤 ID，未选择时为 -1 */
   wardSkinId: number
-}
-
-/** 选人阶段玩家详细信息（组合查询结果） */
-export interface ChampSelectPlayerDetail {
-  summonerId: number
-  championId: number
-  assignedPosition: string
-  gameName: string
-  tagLine: string
-  summonerLevel: number
-  puuid: string
-  profileIconId: number
-  ranked: unknown
-  recentMatches: unknown
-}
-
-// ==================== 队列相关 ====================
-
-/** 常用队列ID */
-export enum QueueId {
-  /** 单/双排位 */
-  RANKED_SOLO = 420,
-  /** 灵活排位 */
-  RANKED_FLEX = 440,
-  /** 匹配模式 */
-  NORMAL_BLIND = 430,
-  /** 征召模式 */
-  NORMAL_DRAFT = 400,
 }
 
 // ==================== 战绩相关 ====================

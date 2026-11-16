@@ -41,7 +41,7 @@ const RUNE_PAGE_POLL_INTERVAL_MS = 1000
 const RUNE_APPLY_SUPPRESS_MS = 1500
 const SPELL_APPLY_SUPPRESS_MS = 1500
 const SMART_LOADOUT_RESTORE_DEBOUNCE_MS = 500
-const RUNE_SAVE_CHAT_DEDUPE_MS = 2000
+const RUNE_SAVE_NOTICE_DEDUPE_MS = 2000
 const SELECTABLE_OPGG_TIERS: OpggTier[] = [
   'all',
   'challenger',
@@ -127,8 +127,9 @@ let pendingSmartLoadoutContext: RecommendationContext | null = null
 let lastObservedSpellKey = ''
 let lastObservedSpellSignature = ''
 let lastObservedSpellSnapshot: ObservedSmartSpellSnapshot | null = null
-let lastRuneSaveChatSignature = ''
-let lastRuneSaveChatAt = 0
+let lastRuneSaveNoticeSignature = ''
+let lastRuneSaveNoticeAt = 0
+let loadoutController = new AbortController()
 const itemSetSyncInFlightKeys = new Set<string>()
 const runeApplyInFlightKeys = new Set<string>()
 const spellApplyInFlightKeys = new Set<string>()
@@ -350,14 +351,14 @@ function getRunePageSignature(page: Pick<RunePagePayload, 'primaryStyleId' | 'su
 }
 
 function notifySmartRuneSaved(context: RecommendationContext, runeKey: string, signature: string): void {
-  const chatSignature = `${runeKey}|${signature}`
+  const noticeSignature = `${runeKey}|${signature}`
   const now = Date.now()
-  if (chatSignature === lastRuneSaveChatSignature && now - lastRuneSaveChatAt < RUNE_SAVE_CHAT_DEDUPE_MS) {
+  if (noticeSignature === lastRuneSaveNoticeSignature && now - lastRuneSaveNoticeAt < RUNE_SAVE_NOTICE_DEDUPE_MS) {
     return
   }
 
-  lastRuneSaveChatSignature = chatSignature
-  lastRuneSaveChatAt = now
+  lastRuneSaveNoticeSignature = noticeSignature
+  lastRuneSaveNoticeAt = now
 
   const championName = getChampionName(context.championId)
   const queueLabel = getContextQueueLabel(context)
@@ -480,6 +481,7 @@ async function persistFinalSmartLoadoutSnapshot(
 ): Promise<void> {
   if (!store.get('smartBuildRecommendation')) return
   if (context.championId <= 0 || !isLocalChampionLocked(session)) return
+  const signal = loadoutController.signal
 
   const runeKey = getSmartRuneKey(context)
   const spellKey = getSmartSpellKey(context)
@@ -520,7 +522,8 @@ async function persistFinalSmartLoadoutSnapshot(
         : null
 
       if (!runePage) {
-        const pages = await lcu.getRunePages()
+        const pages = await lcu.getRunePages(signal)
+        if (!store.get('smartBuildRecommendation') || !isCurrentLoadoutRequest(context, signal)) return
         const active = getActiveRunePage(pages)
         if (active && isValidRunePage(active)) {
           runePage = {
@@ -541,9 +544,9 @@ async function persistFinalSmartLoadoutSnapshot(
       logger.info('[OPGG] 智能配置首次最终快照已保存 → reason=%s, rune=%s, spells=%s', reason, runeSaved, spellsSaved)
     }
   } catch (err) {
-    logger.warn('[OPGG] 智能配置最终快照保存失败 → reason=%s:', reason, err)
+    if (!signal.aborted) logger.warn('[OPGG] 智能配置最终快照保存失败 → reason=%s:', reason, err)
   } finally {
-    smartLoadoutFinalSaveInFlightKeys.delete(finalSaveKey)
+    if (!signal.aborted) smartLoadoutFinalSaveInFlightKeys.delete(finalSaveKey)
   }
 }
 
@@ -609,6 +612,30 @@ function isCurrentRecommendationContext(context: RecommendationContext): boolean
     && currentContext.gameMode === context.gameMode
     && currentContext.mapId === context.mapId
     && currentContext.position === context.position
+}
+
+/** 取消跨玩法、英雄、阶段或功能开关的旧操作，包括读取后的失败回退。 */
+function cancelLoadoutRequests() {
+  loadoutController.abort()
+  loadoutController = new AbortController()
+  itemSetSyncInFlightKeys.clear()
+  runeApplyInFlightKeys.clear()
+  spellApplyInFlightKeys.clear()
+  smartLoadoutFinalSaveInFlightKeys.clear()
+  if (smartLoadoutRestoreTimer != null) window.clearTimeout(smartLoadoutRestoreTimer)
+  smartLoadoutRestoreTimer = null
+  pendingSmartLoadoutContext = null
+}
+
+function isCurrentLoadoutRequest(context: RecommendationContext, signal: AbortSignal): boolean {
+  return !signal.aborted
+    && currentChampionLocked
+    && isSummonersRift(currentContext)
+    && isCurrentRecommendationContext(context)
+}
+
+function needsRecommendationData(): boolean {
+  return store.get('opggBuildRecommendation') || store.get('smartItemSetBuild')
 }
 
 function saveCurrentSmartRunePage(page: RunePage): void {
@@ -702,9 +729,12 @@ async function pollCurrentRunePage(): Promise<void> {
 
   const runeKey = getSmartRuneKey(currentContext)
   if (!runeKey) return
+  const context = { ...currentContext }
+  const signal = loadoutController.signal
 
   try {
-    const pages = await lcu.getRunePages()
+    const pages = await lcu.getRunePages(signal)
+    if (!store.get('smartBuildRecommendation') || !isCurrentLoadoutRequest(context, signal)) return
     const active = getActiveRunePage(pages)
     if (!active || !isValidRunePage(active)) return
 
@@ -739,6 +769,7 @@ async function pollCurrentRunePage(): Promise<void> {
 }
 
 function startRunePagePolling(): void {
+  if (!store.get('smartBuildRecommendation')) return
   if (runePagePollTimer != null) return
 
   lastPolledRuneKey = ''
@@ -761,31 +792,38 @@ function stopRunePagePolling(): void {
 /** 批量写入多条分路的 Sona 装备集（读一次、过滤一次、一次写回，避免多次读写竞态） */
 async function upsertRecommendedItemSets(
   items: Array<{ context: RecommendationContext; recommendation: BuildRecommendation }>,
-): Promise<void> {
+  context: RecommendationContext,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const isActive = () => store.get('smartItemSetBuild') && isCurrentLoadoutRequest(context, signal)
+  if (!isActive()) return false
   const nextItemSets = items
     .map(({ context, recommendation }) => createManagedItemSet(context, recommendation))
     .filter((itemSet): itemSet is ItemSet => itemSet != null)
 
   if (nextItemSets.length === 0) {
     logger.warn('[OPGG] 装备集生成失败：没有可写入的装备 block')
-    return
+    return false
   }
 
   const summoner = await lcu.getSummonerInfo()
-  const wrapper = await lcu.getItemSets(summoner.summonerId)
+  if (!isActive()) return false
+  const wrapper = await lcu.getItemSets(summoner.summonerId, signal)
+  if (!isActive()) return false
   const existingItemSets = Array.isArray(wrapper?.itemSets) ? wrapper.itemSets : []
   const plan = planManagedItemSetUpsert(existingItemSets, nextItemSets)
 
   if (!plan.changed) {
     logger.info('[OPGG] 自动装备集内容未变化，跳过写入：%s', nextItemSets.map((itemSet) => itemSet.title).join(' | '))
-    return
+    return true
   }
 
   await lcu.putItemSets(summoner.summonerId, {
     accountId: wrapper?.accountId ?? summoner.accountId ?? 0,
     itemSets: plan.itemSets,
     timestamp: Date.now(),
-  })
+  }, signal)
+  if (!isActive()) return false
 
   logger.info(
     '[OPGG] 自动装备集已同步：%d 个，清理重复项=%d → %s',
@@ -796,6 +834,7 @@ async function upsertRecommendedItemSets(
 
   const championName = getChampionName(items[0].context.championId)
   Toast.success(`${championName} 出装已配备 - Sona`)
+  return true
 }
 
 /** 匹配/排位识别不到分路时：并发拉取上中打野下路辅助五路，分别写入各自的装备集 */
@@ -804,6 +843,7 @@ function syncRankedAllPositionsItemSets(baseContext: RecommendationContext): voi
   if (lastAppliedItemSetKey === syncKey || itemSetSyncInFlightKeys.has(syncKey)) return
 
   itemSetSyncInFlightKeys.add(syncKey)
+  const signal = loadoutController.signal
 
   const entries = RANKED_ALL_POSITIONS.map((position) => {
     const context: RecommendationContext = { ...baseContext, position }
@@ -812,8 +852,7 @@ function syncRankedAllPositionsItemSets(baseContext: RecommendationContext): voi
 
   Promise.all(entries.map(({ entry }) => entry?.promise ?? Promise.resolve(null)))
     .then(async (recommendations) => {
-      if (!store.get('smartItemSetBuild') || !currentChampionLocked) return
-      if (!isCurrentRecommendationContext(baseContext)) return
+      if (!store.get('smartItemSetBuild') || !isCurrentLoadoutRequest(baseContext, signal)) return
       if (lastAppliedItemSetKey === syncKey) return
 
       const items = entries
@@ -825,14 +864,13 @@ function syncRankedAllPositionsItemSets(baseContext: RecommendationContext): voi
 
       if (items.length === 0) return
 
-      await upsertRecommendedItemSets(items)
-      lastAppliedItemSetKey = syncKey
+      if (await upsertRecommendedItemSets(items, baseContext, signal)) lastAppliedItemSetKey = syncKey
     })
     .catch((err) => {
-      logger.warn('[OPGG] 自动装备集同步失败:', err)
+      if (!signal.aborted) logger.warn('[OPGG] 自动装备集同步失败:', err)
     })
     .finally(() => {
-      itemSetSyncInFlightKeys.delete(syncKey)
+      if (!signal.aborted) itemSetSyncInFlightKeys.delete(syncKey)
     })
 }
 
@@ -850,20 +888,21 @@ function syncRecommendedItemSetWhenReady(entry: RecommendationCacheEntry): void 
   if (lastAppliedItemSetKey === syncKey || itemSetSyncInFlightKeys.has(syncKey)) return
 
   itemSetSyncInFlightKeys.add(syncKey)
+  const signal = loadoutController.signal
   entry.promise
     .then(async (recommendation) => {
       if (!recommendation || !store.get('smartItemSetBuild')) return
-      if (!currentChampionLocked) return
-      if (!isCurrentRecommendationContext(entry.context)) return
+      if (!isCurrentLoadoutRequest(entry.context, signal)) return
       if (lastAppliedItemSetKey === syncKey) return
-      await upsertRecommendedItemSets([{ context: entry.context, recommendation }])
-      lastAppliedItemSetKey = syncKey
+      if (await upsertRecommendedItemSets([{ context: entry.context, recommendation }], entry.context, signal)) {
+        lastAppliedItemSetKey = syncKey
+      }
     })
     .catch((err) => {
-      logger.warn('[OPGG] 自动装备集同步失败:', err)
+      if (!signal.aborted) logger.warn('[OPGG] 自动装备集同步失败:', err)
     })
     .finally(() => {
-      itemSetSyncInFlightKeys.delete(syncKey)
+      if (!signal.aborted) itemSetSyncInFlightKeys.delete(syncKey)
     })
 }
 
@@ -879,6 +918,7 @@ async function applySavedSmartRunePage(context: RecommendationContext): Promise<
   if (!saved || !isValidRunePage(saved)) return false
 
   runeApplyInFlightKeys.add(runeKey)
+  const signal = loadoutController.signal
   try {
     lastAutoAppliedRuneSignature = getRunePageSignature(saved)
     suppressRuneSaveUntil = Date.now() + RUNE_APPLY_SUPPRESS_MS
@@ -888,12 +928,16 @@ async function applySavedSmartRunePage(context: RecommendationContext): Promise<
       primaryStyleId: saved.primaryStyleId,
       subStyleId: saved.subStyleId,
       selectedPerkIds: [...saved.selectedPerkIds],
-    })
+    }, signal)
+    if (!store.get('smartBuildRecommendation') || !isCurrentLoadoutRequest(context, signal)) return false
     lastAppliedRuneKey = runeKey
     logger.info('[OPGG] 已自动应用智能符文 → key=%s, page=%s, signature=%s', runeKey, pageName, lastAutoAppliedRuneSignature)
     return true
+  } catch (err) {
+    if (signal.aborted) return false
+    throw err
   } finally {
-    runeApplyInFlightKeys.delete(runeKey)
+    if (!signal.aborted) runeApplyInFlightKeys.delete(runeKey)
   }
 }
 
@@ -909,24 +953,30 @@ async function applySavedSmartSummonerSpells(context: RecommendationContext): Pr
   if (!saved || !isValidSummonerSpells(saved)) return false
 
   spellApplyInFlightKeys.add(spellKey)
+  const signal = loadoutController.signal
   try {
     suppressSpellSaveUntil = Date.now() + SPELL_APPLY_SUPPRESS_MS
     await lcu.updateMySelection({
       spell1Id: saved.spell1Id,
       spell2Id: saved.spell2Id,
-    })
+    }, signal)
+    if (!store.get('smartBuildRecommendation') || !isCurrentLoadoutRequest(context, signal)) return false
 
     lastAppliedSpellKey = spellKey
     lastObservedSpellKey = spellKey
     lastObservedSpellSignature = getSummonerSpellSignature(saved)
     logger.info('[OPGG] 已自动恢复召唤师技能 → key=%s, spells=%s', spellKey, lastObservedSpellSignature)
     return true
+  } catch (err) {
+    if (signal.aborted) return false
+    throw err
   } finally {
-    spellApplyInFlightKeys.delete(spellKey)
+    if (!signal.aborted) spellApplyInFlightKeys.delete(spellKey)
   }
 }
 
 async function applySavedSmartLoadout(context: RecommendationContext): Promise<void> {
+  const signal = loadoutController.signal
   const [runeRestored, spellsRestored] = await Promise.all([
     applySavedSmartRunePage(context).catch((err) => {
       logger.warn('[OPGG] 智能符文自动恢复失败:', err)
@@ -938,7 +988,7 @@ async function applySavedSmartLoadout(context: RecommendationContext): Promise<v
     }),
   ])
 
-  if (!runeRestored && !spellsRestored) return
+  if (signal.aborted || (!runeRestored && !spellsRestored)) return
 
   const championName = getChampionName(context.championId)
   const queueLabel = getContextQueueLabel(context)
@@ -978,7 +1028,9 @@ function stopChampionLockPolling() {
 }
 
 function scheduleRefreshWhenChampionLocked(delay = 250) {
+  if (!phaseUnsub) return
   if (championLockPollTimer != null) return
+  const signal = loadoutController.signal
 
   championLockPollTimer = window.setTimeout(async () => {
     championLockPollTimer = null
@@ -986,13 +1038,16 @@ function scheduleRefreshWhenChampionLocked(delay = 250) {
 
     try {
       const phase = await lcu.getGameflowPhase().catch(() => null)
+      if (signal.aborted || !phaseUnsub) return
       if (phase !== 'ChampSelect') {
         stopChampionLockPolling()
         return
       }
 
       const session = await lcu.getChampSelectSession()
-      if (!await isSummonersRiftChampSelect(session)) {
+      const supported = await isSummonersRiftChampSelect(session)
+      if (signal.aborted || !phaseUnsub) return
+      if (!supported) {
         unmount()
         return
       }
@@ -1005,6 +1060,7 @@ function scheduleRefreshWhenChampionLocked(delay = 250) {
       // ChampSelect session may not be ready immediately after phase changes.
     }
 
+    if (signal.aborted || !phaseUnsub) return
     if (championLockPollAttempts < 600) {
       scheduleRefreshWhenChampionLocked(500)
     } else {
@@ -1018,18 +1074,17 @@ async function refreshContext(session?: ChampSelectSession) {
   const refreshToken = ++contextRefreshToken
   try {
     const currentSession = session ?? await lcu.getChampSelectSession()
+    if (refreshToken !== contextRefreshToken) return
     const localPlayer = getLocalPlayer(currentSession)
     const queueId = currentSession.queueId ?? 0
     const championId = localPlayer?.championId ?? getLocalChampionId(currentSession)
     const { gameMode, mapId } = await resolveGameContext(queueId)
+    if (refreshToken !== contextRefreshToken) return
     const assignedPosition = mapAssignedPosition(localPlayer?.assignedPosition)
-    const position = await resolveInitialRecommendationPosition({
-      championId,
-      queueId,
-      gameMode,
-      mapId,
-      assignedPosition,
-    })
+    let position = assignedPosition
+    if (needsRecommendationData()) {
+      position = await resolveInitialRecommendationPosition({ championId, queueId, gameMode, mapId, assignedPosition })
+    }
     if (refreshToken !== contextRefreshToken) return
 
     currentChampionLocked = isLocalChampionLocked(currentSession)
@@ -1046,13 +1101,15 @@ async function refreshContext(session?: ChampSelectSession) {
       unmount(false)
       return
     }
+    startRunePagePolling()
 
     if (localPlayer) {
       saveCurrentSmartSummonerSpells(localPlayer, currentContext)
     }
 
-    if (!currentContext.gameVersion) {
+    if (needsRecommendationData() && !currentContext.gameVersion) {
       currentContext.gameVersion = await lcu.getGameVersion().catch(() => '')
+      if (refreshToken !== contextRefreshToken) return
     }
 
     logger.info(
@@ -1070,7 +1127,7 @@ async function refreshContext(session?: ChampSelectSession) {
       } else {
         unmountPanel()
       }
-      const cacheEntry = ensureRecommendationPrefetch(currentContext)
+      const cacheEntry = needsRecommendationData() ? ensureRecommendationPrefetch(currentContext) : null
       if (cacheEntry && currentChampionLocked) {
         syncRecommendedItemSetWhenReady(cacheEntry)
       }
@@ -1130,6 +1187,7 @@ function closeInGameBuildRecommendationModal() {
 }
 
 function cleanupInGameBuildRecommendationModal() {
+  inGameModalRenderToken += 1
   if (inGameModalRoot) {
     inGameModalRoot.unmount()
     inGameModalRoot = null
@@ -1187,6 +1245,7 @@ function renderInGameBuildRecommendationModal(
       closable: false,
       children: createElement('div', { className: 'sona-opgg-modal-content' },
         createElement(OpggBuildRecommendationPanel, {
+          signal: loadoutController.signal,
           context,
           recommendation,
           loadError,
@@ -1260,15 +1319,20 @@ async function resolveInGameRecommendationContext(): Promise<RecommendationConte
 }
 
 export async function showOpggBuildRecommendationModal() {
+  if (!store.get('opggBuildRecommendation')) return
+  const token = ++inGameModalRenderToken
+  const signal = loadoutController.signal
   const context = await resolveInGameRecommendationContext()
+  if (signal.aborted || token !== inGameModalRenderToken || !store.get('opggBuildRecommendation')) return
   if (!isSummonersRift(context)) return
   currentContext = { ...context }
   const cacheEntry = ensureRecommendationPrefetch(context)
-  const token = ++inGameModalRenderToken
   renderInGameBuildRecommendationModal(context, cacheEntry, token)
 }
 
 async function openRecommendationPanel(anchor: HTMLElement, contextOverride?: RecommendationContext) {
+  if (!store.get('opggBuildRecommendation')) return
+  const signal = loadoutController.signal
   if (contextOverride) {
     currentContext = { ...contextOverride }
   } else if (currentContext.championId <= 0) {
@@ -1278,6 +1342,7 @@ async function openRecommendationPanel(anchor: HTMLElement, contextOverride?: Re
   }
 
   const context = contextOverride ? { ...contextOverride } : { ...currentContext }
+  if (signal.aborted || !store.get('opggBuildRecommendation')) return
   if (!isSummonersRift(context)) return
   const cacheEntry = ensureRecommendationPrefetch(context)
   const recommendation = cacheEntry?.data ?? null
@@ -1411,22 +1476,6 @@ async function openRecommendationPanel(anchor: HTMLElement, contextOverride?: Re
   }
 }
 
-export async function openOpggBuildRecommendationDebugPanel(
-  anchor: HTMLElement,
-  championId = 68,
-  contextOverride: Partial<Omit<RecommendationContext, 'championId' | 'gameVersion'>> = {},
-) {
-  const gameVersion = await lcu.getGameVersion().catch(() => currentContext.gameVersion)
-  await openRecommendationPanel(anchor, {
-    championId,
-    queueId: contextOverride.queueId ?? 420,
-    gameVersion,
-    gameMode: contextOverride.gameMode ?? 'CLASSIC',
-    mapId: contextOverride.mapId ?? 11,
-    position: contextOverride.position ?? 'none',
-  })
-}
-
 function renderRecommendationPanel(
   root: Root,
   context: RecommendationContext,
@@ -1439,6 +1488,7 @@ function renderRecommendationPanel(
 ): void {
   flushSync(() => {
     root.render(createElement(OpggBuildRecommendationPanel, {
+      signal: loadoutController.signal,
       context,
       recommendation,
       loadError,
@@ -1519,11 +1569,13 @@ function tryInjectInGameBuildButton(): boolean {
 }
 
 function registerInGameBuildButton() {
+  if (!store.get('opggBuildRecommendation')) return
   if (inGameBuildButtonRegistered) return
 
   const token = ++inGameBuildButtonToken
   lcu.getGameflowSession().then((session) => {
     if (token !== inGameBuildButtonToken) return
+    if (!store.get('opggBuildRecommendation')) return
     if (!isSummonersRiftGameflow(session) || inGameBuildButtonRegistered) return
     injector.register(tryInjectInGameBuildButton)
     inGameBuildButtonRegistered = true
@@ -1567,6 +1619,7 @@ function unmountPanel() {
 
 function unmount(resetContext = true) {
   contextRefreshToken += 1
+  cancelLoadoutRequests()
   stopChampionLockPolling()
   stopRunePagePolling()
   unmountPanel()
@@ -1586,21 +1639,12 @@ function unmount(resetContext = true) {
   lastAutoAppliedRuneSignature = ''
   suppressRuneSaveUntil = 0
   suppressSpellSaveUntil = 0
-  if (smartLoadoutRestoreTimer != null) {
-    window.clearTimeout(smartLoadoutRestoreTimer)
-    smartLoadoutRestoreTimer = null
-  }
-  pendingSmartLoadoutContext = null
   lastObservedSpellKey = ''
   lastObservedSpellSignature = ''
   lastObservedRuneSnapshot = null
   lastObservedSpellSnapshot = null
-  lastRuneSaveChatSignature = ''
-  lastRuneSaveChatAt = 0
-  itemSetSyncInFlightKeys.clear()
-  runeApplyInFlightKeys.clear()
-  spellApplyInFlightKeys.clear()
-  smartLoadoutFinalSaveInFlightKeys.clear()
+  lastRuneSaveNoticeSignature = ''
+  lastRuneSaveNoticeAt = 0
   smartLoadoutFirstSavedRuneKeys.clear()
   smartLoadoutFirstSavedSpellKeys.clear()
 }
@@ -1617,7 +1661,6 @@ function startOpggListeners() {
     if (phase === 'ChampSelect') {
       unregisterInGameBuildButton()
       logger.info('[OPGG] 进入 ChampSelect，等待本地英雄锁定')
-      startRunePagePolling()
       scheduleRefreshWhenChampionLocked()
     } else if (phase === 'InProgress') {
       unmount()
@@ -1631,6 +1674,10 @@ function startOpggListeners() {
   champSelectUnsub = lcu.observe(LcuEventUri.CHAMP_SELECT, (event: LCUEventMessage) => {
     if (event.eventType !== 'Create' && event.eventType !== 'Update') return
     const session = event.data as ChampSelectSession
+    if (session.queueId !== currentContext.queueId || getLocalChampionId(session) !== currentContext.championId) {
+      cancelLoadoutRequests()
+      currentChampionLocked = false
+    }
     if (isLocalChampionLocked(session)) {
       stopChampionLockPolling()
       refreshContext(session)
@@ -1640,8 +1687,8 @@ function startOpggListeners() {
   })
 
   lcu.getGameflowPhase().then((phase) => {
+    if (!phaseUnsub) return
     if (phase === 'ChampSelect') {
-      startRunePagePolling()
       scheduleRefreshWhenChampionLocked()
     } else if (phase === 'InProgress') {
       registerInGameBuildButton()
@@ -1655,7 +1702,15 @@ export function updateOpggBuildRecommendation(enabled: boolean) {
   if (enabled && !phaseUnsub) {
     startOpggListeners()
   } else if (enabled && phaseUnsub) {
+    // 共用监听器仍启用时，也立即取消已关闭功能的待处理写入。
+    cancelLoadoutRequests()
+    if (!store.get('smartBuildRecommendation')) stopRunePagePolling()
+    if (!store.get('opggBuildRecommendation')) {
+      unmountPanel()
+      unregisterInGameBuildButton()
+    }
     lcu.getGameflowPhase().then((phase) => {
+      if (!phaseUnsub) return
       if (phase === 'ChampSelect') {
         scheduleRefreshWhenChampionLocked()
       } else if (phase === 'InProgress') {

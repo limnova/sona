@@ -30,7 +30,6 @@ function getRuntime(): SonaRuntime {
       container: null,
       root: null,
       hasShownStartupToast: false,
-      hasShownSpecialDayToast: false,
     }
   }
 
@@ -62,15 +61,11 @@ function ensureContainer(runtime: SonaRuntime) {
   return runtime.container
 }
 
-// Store context for use across the plugin
-let penguContext: PenguContext | null = null
-
 /**
  * Called before League Client initializes its scripts.
  * Use this for early hooks like RCP interception.
  */
 export function init(context: PenguContext) {
-  penguContext = context
   initPluginResolver(import.meta.url, context)
   lcu.bindContext(context)
 
@@ -93,13 +88,6 @@ export function load() {
 }
 
 /**
- * Get the stored Pengu context
- */
-export function getContext(): PenguContext | null {
-  return penguContext
-}
-
-/**
  * 容器守护注入任务
  * 检测 #sona-root 是否脱离 DOM，脱离则自动重新挂载
  */
@@ -111,10 +99,6 @@ function tryGuardContainer(): boolean {
     logger.warn('Detected host DOM refresh; restored app container')
   }
   return Boolean(runtime.container?.isConnected)
-}
-
-function isSpecialDay(date = new Date()): boolean {
-  return date.getMonth() === 7 && date.getDate() === 21
 }
 
 /**
@@ -141,10 +125,5 @@ function mountApp() {
   if (!runtime.hasShownStartupToast) {
     Toast.success('Sona 已启动 ♫')
     runtime.hasShownStartupToast = true
-  }
-
-  if (!runtime.hasShownSpecialDayToast && isSpecialDay()) {
-    Toast.success('今天是个特别的日子！🎉')
-    runtime.hasShownSpecialDayToast = true
   }
 }

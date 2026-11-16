@@ -80,6 +80,14 @@ beforeEach(() => {
 })
 
 describe('非峡谷功能入口', () => {
+  it('所有功能关闭时，启动不预取英雄 T 级或战绩', async () => {
+    state.config = {}
+    const { initFeatures } = await import('@/lib/features')
+    initFeatures()
+    await settle()
+    expect(state.getTier).not.toHaveBeenCalled()
+    expect(state.getHistory).not.toHaveBeenCalled()
+  })
   it.each([['KIWI', 12], ['ARAM', 12], ['CHERRY', 30], ['URF', 11], ['NEXUSBLITZ', 21], ['CLASSIC', 10]] as const)(
     '%s 不启动房间战绩、选人战绩、T 级加载或游戏分析', async (gameMode, mapId) => {
       selectMode(gameMode, mapId)
@@ -103,12 +111,12 @@ describe('非峡谷功能入口', () => {
       initFeatures()
       await settle()
       expect(state.getHistory).not.toHaveBeenCalled()
-      // 插件启动仅预热一份峡谷数据，不再加载特殊模式。
-      expect(state.getTier).toHaveBeenCalledExactlyOnceWith({ tier: 'emerald_plus' })
+      expect(state.getTier).not.toHaveBeenCalled()
     },
   )
 
   it('峡谷仍启动队友战绩、T 级请求和游戏分析', async () => {
+    state.config.champSelectTierBadge = true
     const { initFeatures } = await import('@/lib/features')
     const { updateGameAnalysisPopup } = await import('@/lib/features/game-analysis-popup')
     initFeatures()

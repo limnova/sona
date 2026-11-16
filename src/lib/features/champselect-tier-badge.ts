@@ -156,12 +156,6 @@ function ensureTierMap(tier = getSelectedTier()): Promise<Map<number, ChampionTi
   return entry.promise
 }
 
-export function preloadChampSelectTierBadgeData() {
-  const selectedTier = getSelectedTier()
-  logger.info('[ChampTier] 开始预加载峡谷英雄 T 级数据 → tier=%s', selectedTier)
-  void ensureTierMap(selectedTier).catch(() => { /* logged in ensureTierMap */ })
-}
-
 async function loadTierData(session?: ChampSelectSession) {
   const token = ++loadToken
   const activeSession = session ?? await lcu.getChampSelectSession().catch(() => null)
